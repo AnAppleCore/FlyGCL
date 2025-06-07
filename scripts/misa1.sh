@@ -19,28 +19,36 @@ conda --version
 python --version
 
 # CIL CONFIG
-METHOD="MISA_V2"
-# CHECKPOINT="R100_noW_sup1k_sample_200_lr_0.1_numtask_50_steps_1_0"
-# META_PATH="/data//meta_vit2/R100_noW_sup1k_sample_200_lr_0.1_numtask_50_steps_1/meta_epoch_0.pth"
-CHECKPOINT="R100_noW_ibot_sample_200_lr_0.1_numtask_50_steps_1_0"
-META_PATH="/data//meta_vit2/R100_noW_ibot_sample_200_lr_0.1_numtask_50_steps_1/meta_epoch_0.pth"
-
+METHOD="DualPrompt"
+# CHECKPOINT="R100_noW_sup_sample_200_lr_0.1_numtask_50_steps_1_5"
+# META_PATH="/data//meta_vit2/R100_noW_sup_sample_200_lr_0.1_numtask_50_steps_1/meta_epoch_5.pth"
 # COR_PATH="/data//meta_vit2/R100_noW_sup_sample_200_lr_0.1_numtask_50_steps_1/cov_matrix_backbone5.npy"
-# LINEAR_PATH="/data//meta_vit2/R100_noW_sup_sample_200_lr_0.1_numtask_50_steps_1/backbone5_linear1000_meta_epoch_4.pth"
-MODE="DualPrompt"
-DATASET="cub200" # cifar10, cifar100, tinyimagenet, imagenet, imagenet-r, nch, cub200
-NOTE=${METHOD}_21k_${DATASET}_${CHECKPOINT}
+
+CHECKPOINT="R100_noW_ibot_sample_200_lr_0.1_numtask_50_steps_1_30"
+META_PATH="/data//meta_vit2/R100_noW_ibot_sample_200_lr_0.1_numtask_50_steps_1/meta_epoch_30.pth"
+COR_PATH="/data//meta_vit2/R100_noW_ibot_sample_200_lr_0.1_numtask_50_steps_1/cov_matrix_backbone30.npy"
+
+# CHECKPOINT="R100_noW_sup1k_sample_200_lr_0.1_numtask_50_steps_1_2"
+# META_PATH="/data//meta_vit2/R100_noW_sup1k_sample_200_lr_0.1_numtask_50_steps_1/meta_epoch_2.pth"
+# COR_PATH="/data//meta_vit2/R100_noW_sup1k_sample_200_lr_0.1_numtask_50_steps_1/cov_matrix_backbone2.npy"
+
+COR_COEF=0.0
+
+# NOTE="DualPrompt"
+MODE="DualPrompt" # "er" DualPrompt
+DATASET="cifar100" # cifar10, cifar100, tinyimagenet, imagenet, imagenet-r, nch, cub200
+NOTE=${METHOD}_coef_${COR_COEF}_21k_${DATASET}_${CHECKPOINT}
 N_TASKS=5
 N=50
 M=10
 GPU_TRANSFORM="--gpu_transform"
 USE_AMP="--use_amp"
 SEEDS=1
-# echo "SEEEDS="$SEEDS
+echo "SEEEDS="$SEEDS
 
 OPT="adam"
 
-if [ "$DATASET" == "cifar100" ]; then
+if [ "$DATASET" == "cifar100" ]; then 
     MEM_SIZE=0 ONLINE_ITER=3
     MODEL_NAME="DualPrompt" EVAL_PERIOD=1000
     BATCHSIZE=64; LR=5e-3 OPT_NAME="adam" SCHED_NAME="default" MEMORY_EPOCH=256
@@ -78,12 +86,6 @@ elif [ "$DATASET" == "cub200" ]; then
     BATCHSIZE=64; LR=5e-3 OPT_NAME="adam" SCHED_NAME="default" MEMORY_EPOCH=100
     DATA_DIR="/data/datasets/CUB200_2011"
 
-elif [ "$DATASET" == "cars196" ]; then
-    MEM_SIZE=0 ONLINE_ITER=3
-    MODEL_NAME="DualPrompt" EVAL_PERIOD=1000
-    BATCHSIZE=64; LR=5e-3 OPT_NAME="adam" SCHED_NAME="default" MEMORY_EPOCH=100
-    DATA_DIR="/data/datasets/CARS196/split_imgs"
-
 elif [ "$DATASET" == "cub175" ]; then
     MEM_SIZE=0 ONLINE_ITER=3
     MODEL_NAME="DualPrompt" EVAL_PERIOD=1000
@@ -115,7 +117,8 @@ do
     --lr $LR --batchsize $BATCHSIZE \
     --memory_size $MEM_SIZE $GPU_TRANSFORM --online_iter $ONLINE_ITER --data_dir $DATA_DIR \
     --note $NOTE --eval_period $EVAL_PERIOD --transforms autoaug --memory_epoch $MEMORY_EPOCH --n_worker 8 --rnd_NM \
-    --load_pt \
+    --nobatchmask\
+    --cor_path $COR_PATH --pretrain_cor --cor_coef $COR_COEF \
     --meta_path $META_PATH > /home//DGIL/MISA/results/output/vit_in21k/$NOTE.txt 2>&1
 done
 

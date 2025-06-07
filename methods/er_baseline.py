@@ -6,7 +6,6 @@ import gc
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from utils.data_loader import cutmix_data
 from utils.train_utils import select_scheduler
@@ -17,8 +16,7 @@ from methods._trainer import _Trainer
 import torch.distributed as dist
 from utils.memory import MemoryBatchSampler
 
-logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
+# logger = logging.getLogger()
 
 
 def cycle(iterable):
@@ -32,6 +30,7 @@ class ER(_Trainer):
         super(ER, self).__init__(*args, **kwargs)
         self.nobatchmask = kwargs.get("nobatchmask")
         self.sessionmask = kwargs.get("sessionmask")
+        self.model_name  = kwargs.get("model_name")
 
     def add_new_class(self, class_name):
         # print('using DP mask')
@@ -77,7 +76,12 @@ class ER(_Trainer):
             _loss += loss
             _acc += acc
             _iter += 1
-        self.update_memory(idx, labels)
+
+        if self.model_name == 'resnet34':
+            # print('update using ewc')
+            self.update_memory_ewc(images, labels)
+        else:
+            self.update_memory(idx, labels)
         del(images, labels)
         gc.collect()
         return _loss / _iter, _acc / _iter
@@ -120,6 +124,42 @@ class ER(_Trainer):
                     self.memory.replace_data([sample[i], self.exposed_classes[label[i].item()]], index)
             else:
                 # print(self.exposed_classes, label[i].item())
+                self.memory.replace_data([sample[i], self.exposed_classes[label[i].item()]])
+    def update_memory_ewc(self, sample, label):
+        # Update memory
+        if self.distributed:
+            sample = torch.cat(self.all_gather(sample.to(self.device)))
+            label = torch.cat(self.all_gather(label.to(self.device)))
+            sample = sample.cpu()
+            label = label.cpu()
+        idx = []
+        if self.is_main_process():
+            for lbl in label:
+                self.seen += 1
+                if len(self.memory) < self.memory_size:
+                    idx.append(-1)
+                else:
+                    j = torch.randint(0, self.seen, (1,)).item()
+                    if j < self.memory_size:
+                        idx.append(j)
+                    else:
+                        idx.append(self.memory_size)
+        # Distribute idx to all processes
+        if self.distributed:
+            idx = torch.tensor(idx).to(self.device)
+            size = torch.tensor([idx.size(0)]).to(self.device)
+            dist.broadcast(size, 0)
+            if dist.get_rank() != 0:
+                idx = torch.zeros(size.item(), dtype=torch.long).to(self.device)
+            dist.barrier() # wait for all processes to reach this point
+            dist.broadcast(idx, 0)
+            idx = idx.cpu().tolist()
+        # idx = torch.cat(self.all_gather(torch.tensor(idx).to(self.device))).cpu().tolist()
+        for i, index in enumerate(idx):
+            if len(self.memory) >= self.memory_size:
+                if index < self.memory_size:
+                    self.memory.replace_data([sample[i], self.exposed_classes[label[i].item()]], index)
+            else:
                 self.memory.replace_data([sample[i], self.exposed_classes[label[i].item()]])
 
     def online_before_task(self, task_id):

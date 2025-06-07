@@ -14,7 +14,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from utils.augment import Cutout, Invert, Solarize, select_autoaugment
 from torchvision import transforms
 # from randaugment.randaugment import RandAugment
@@ -34,7 +33,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torch import optim
 
 from methods._trainer import _Trainer
@@ -58,7 +56,6 @@ import random
 
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 T = TypeVar('T', bound = 'nn.Module')
 

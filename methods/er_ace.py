@@ -6,7 +6,6 @@ import gc
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from utils.data_loader import cutmix_data
 from utils.train_utils import select_scheduler
@@ -18,7 +17,6 @@ import torch.distributed as dist
 from utils.memory import MemoryBatchSampler
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 
 def cycle(iterable):

@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from utils.augment import Cutout, Invert, Solarize, select_autoaugment
 from torchvision import transforms
 # from randaugment.randaugment import RandAugment
@@ -45,10 +44,7 @@ from models.vit import _create_vision_transformer
 
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-
-
-logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
+# logger = logging.getLogger()
 
 T = TypeVar('T', bound = 'nn.Module')
 
@@ -68,7 +64,8 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224', pretrained=pretrained, **model_kwargs)
     return model
 
-class L2P(ER):
+# class L2P(ER):
+class L2P(_Trainer):
     def __init__(self, *args, **kwargs):
         super(L2P, self).__init__(*args, **kwargs)
         

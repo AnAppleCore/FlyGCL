@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from torch.utils.tensorboard import SummaryWriter
 from torch import optim
 
 from utils.data_loader import ImageDataset, StreamDataset, MemoryDataset, cutmix_data, get_statistics
@@ -25,7 +24,6 @@ from utils.memory import Memory
 import gc
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 
 def cycle(iterable):

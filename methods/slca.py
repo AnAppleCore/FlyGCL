@@ -21,9 +21,9 @@ def cycle(iterable):
         for i in iterable:
             yield i
 
-class FT(_Trainer):
+class SLCA(_Trainer):
     def __init__(self, *args, **kwargs):
-        super(FT, self).__init__(*args, **kwargs)
+        super(SLCA, self).__init__(*args, **kwargs)
     
     def online_step(self, images, labels, idx):
         self.add_new_class(labels)

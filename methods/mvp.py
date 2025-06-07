@@ -9,7 +9,6 @@ import copy
 
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
 
 import logging
 import copy
@@ -19,7 +18,6 @@ import datetime
 import gc
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
 
 from methods._trainer import _Trainer
 
@@ -33,10 +31,10 @@ from torch.utils.data import DataLoader
 
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 T = TypeVar('T', bound = 'nn.Module')
 
@@ -56,6 +54,27 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224', pretrained=pretrained, **model_kwargs)
     return model
 
+
+def stable_cholesky(matrix, reg=1e-4):
+    # try:
+    #     return torch.linalg.cholesky(matrix)
+    # except torch._C._LinAlgError:
+        reg_matrix = reg * torch.eye(matrix.size(0), device=matrix.device, dtype=matrix.dtype)
+        return torch.linalg.cholesky(matrix + reg_matrix)
+
+def transform_to_target_covariance(Fi, target_cor, reg=1e-4):
+    Fi_centered = Fi - Fi.mean(dim=0)
+    n_samples = Fi_centered.size(0)
+    C = (Fi_centered.T @ Fi_centered) / (n_samples - 1)
+    
+    L = stable_cholesky(C, reg)
+    L_cor = stable_cholesky(target_cor, reg)
+    
+    A = torch.linalg.solve(L, L_cor)
+    
+    Fj = Fi_centered @ A
+    return Fj
+
 class MVP(_Trainer):
     def __init__(self, **kwargs):
         super(MVP, self).__init__(**kwargs)
@@ -70,6 +89,26 @@ class MVP(_Trainer):
         self.alpha  = kwargs.get("alpha")
         self.gamma  = kwargs.get("gamma")
         self.margin  = kwargs.get("margin")
+
+        self.cor_path = kwargs.get("cor_path")
+        self.pretrain_cor = kwargs.get("pretrain_cor")
+        self.cor_coef = kwargs.get("cor_coef")
+        self.update_cor = kwargs.get("update_cor")
+
+        if self.cor_path is not None:
+            self.cov_matrix_tensor = np.load(self.cor_path)
+            self.cov_matrix_tensor=torch.from_numpy(self.cov_matrix_tensor).to(device='cuda', dtype=torch.float32)
+
+            if self.update_cor:
+                self.cov_matrix_tensor.requires_grad = True
+            else:
+                self.cov_matrix_tensor.requires_grad = False
+            
+            if self.pretrain_cor:
+                print("Load corvariance from:", self.cor_path)
+            else:
+                # random initialize the cov_matrix_tensor
+                self.cov_matrix_tensor = torch.randn(768, 768, device='cuda', dtype=torch.float32)
 
         self.labels = torch.empty(0)
         self.mask_store = None
@@ -143,6 +182,11 @@ class MVP(_Trainer):
     def model_forward(self, x, y, mymask=None):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             feature, mask = self.model_without_ddp.forward_features(x)
+
+            if self.cor_path is not None:         
+                Fj = transform_to_target_covariance(feature, self.cov_matrix_tensor)
+                Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                feature = (1-self.cor_coef)*feature + self.cor_coef*Fj
 
             mean_mask = mask.mean(dim=0).detach().clone().cpu() 
             # if self.mask_store is None:

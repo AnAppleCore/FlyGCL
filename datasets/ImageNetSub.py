@@ -28,7 +28,8 @@ class ImageNetSub(ImageFolder):
         self.train = train
 
 
-        self.fpath = os.path.join(root, 'imgnt')
+        # self.fpath = os.path.join(root, 'imgnt')
+        self.fpath = root
 
         if not os.path.exists(self.fpath):
             if not download:

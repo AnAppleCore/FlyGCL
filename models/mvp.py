@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from torch.utils.tensorboard import SummaryWriter
 
 import timm
 from timm.models.registry import register_model
@@ -13,7 +12,6 @@ from timm.models.vision_transformer import _cfg, default_cfgs
 from models.vit import _create_vision_transformer
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 T = TypeVar('T', bound = 'nn.Module')
 
@@ -55,8 +53,6 @@ class MVP(nn.Module):
         
         self.features = torch.empty(0)
         self.keys     = torch.empty(0)
-
-        self.load_pt = kwargs.get("load_pt")
 
         if backbone_name is None:
             raise ValueError('backbone_name must be specified')
@@ -106,15 +102,14 @@ class MVP(nn.Module):
 
         self.exposed_classes = 0
 
-        if self.load_pt:
-            raise NotImplementedError('Specific pretrained prompt for L2P is not provided. But you can load MISA prompt for L2P if you want (comment this line and uncomment the following code).')
-            # e_load_path = 'pretrained_prompt/e_prompt.pt'
-            # g_load_path = 'pretrained_prompt/g_prompt.pt'
+        # if load:
+        #     e_load_path = 'pretrained_prompt/e_prompt.pt'
+        #     g_load_path = 'pretrained_prompt/g_prompt.pt'
 
-            # # self.e_prompt.load_e(e_load_path)
-            # print('loading from: {}'.format(g_load_path))
-            # pt_gpt = torch.load(g_load_path)
-            # self.g_prompts = pt_gpt.prompts
+        #     # self.e_prompt.load_e(e_load_path)
+        #     print('loading from: {}'.format(g_load_path))
+        #     pt_gpt = torch.load(g_load_path)
+        #     self.g_prompts = pt_gpt.prompts
 
     
     @torch.no_grad()

@@ -272,9 +272,7 @@ dependencies:
     - sip==6.6.2
     - smmap==5.0.1
     - snowballstemmer==2.2.0
-    - tensorboard==2.10.0
-    - tensorboard-data-server==0.6.1
-    - tensorboard-plugin-wit==1.8.1
+    
     - tifffile==2024.2.12
     - tomli==2.0.1
     - tomlkit==0.12.4

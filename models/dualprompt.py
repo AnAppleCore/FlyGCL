@@ -5,15 +5,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from torch.utils.tensorboard import SummaryWriter
 import timm
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
 from collections import OrderedDict
 from models.vit import _create_vision_transformer
+import numpy as np
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 T = TypeVar('T', bound = 'nn.Module')
 
@@ -40,6 +39,27 @@ g_ratio = False
 
 L1Loss = torch.nn.L1Loss()
 MSELoss = torch.nn.MSELoss()
+
+def stable_cholesky(matrix, reg=1e-4):
+    # try:
+    #     return torch.linalg.cholesky(matrix)
+    # except torch._C._LinAlgError:
+        reg_matrix = reg * torch.eye(matrix.size(0), device=matrix.device, dtype=matrix.dtype)
+        return torch.linalg.cholesky(matrix + reg_matrix)
+
+def transform_to_target_covariance(Fi, target_cor, reg=1e-4):
+    Fi_centered = Fi - Fi.mean(dim=0)
+    n_samples = Fi_centered.size(0)
+    C = (Fi_centered.T @ Fi_centered) / (n_samples - 1)
+    
+    L = stable_cholesky(C, reg)
+    L_cor = stable_cholesky(target_cor, reg)
+    
+    A = torch.linalg.solve(L, L_cor)
+    
+    Fj = Fi_centered @ A
+    return Fj
+
 
 class Prompt(nn.Module):
     def __init__(self,
@@ -138,6 +158,7 @@ class Prompt(nn.Module):
     
     def load_prompts_only(self, path):
         pt = torch.load(path) 
+        # pt = pt.prompts
         self.prompts = nn.Parameter(pt.detach().clone())
 
     def load_from_ckpt(self, ckpt, include_key=True):
@@ -244,6 +265,111 @@ class DualPrompt(nn.Module):
         self.e_proj = kwargs.get("e_proj")
         self.g_proj = kwargs.get("g_proj")
 
+        self.p_path = kwargs.get("p_path") 
+        
+        self.cor_path = kwargs.get("cor_path")
+        self.update_cor = kwargs.get("update_cor")
+        self.pretrain_cor = kwargs.get("pretrain_cor")
+        self.cor_coef = kwargs.get("cor_coef")
+
+        self.linear_path= kwargs.get("linear_path")
+        self.update_linear = kwargs.get("update_linear")
+        self.pretrain_linear = kwargs.get("pretrain_linear")
+
+        self.note = kwargs.get("note")
+        self.only_test = kwargs.get("only_test")
+        self.pre_features = torch.empty(0, 768, dtype=torch.float32)
+        self.post_features = torch.empty(0, 768, dtype=torch.float32)
+        self.final_features = torch.empty(0, 768, dtype=torch.float32)
+
+        self.ranpac = kwargs.get("ranpac")
+        self.ranpac_coef = kwargs.get("ranpac_coef")
+
+        if self.ranpac:
+            self.cov_matrix_tensor = []
+
+
+        if self.cor_path is not None:
+            self.cov_matrix_tensor = np.load(self.cor_path)
+            self.cov_matrix_tensor=torch.from_numpy(self.cov_matrix_tensor).to(device='cuda', dtype=torch.float32)
+
+            if self.update_cor:
+                self.cov_matrix_tensor.requires_grad = True
+            else:
+                self.cov_matrix_tensor.requires_grad = False
+            
+            if self.pretrain_cor:
+                print("Load corvariance from:", self.cor_path)
+            else:
+                # random initialize the cov_matrix_tensor
+                self.cov_matrix_tensor = torch.randn(768, 768, device='cuda', dtype=torch.float32)
+          
+
+            # self.linear_corvariance = nn.Sequential(
+            #     nn.Linear(768, 768, bias=False),
+            #     nn.ReLU())
+
+            # if self.update_cor:
+            #     for param in self.linear_corvariance.parameters():
+            #         param.requires_grad = True
+            # else:
+            #     for param in self.linear_corvariance.parameters():
+            #         param.requires_grad = False
+
+            # change using the cov_matrix_tensor
+            # if self.pretrain_cor:
+            #     print("Load corvariance from:", self.cor_path)
+            #     self.linear_corvariance.load_state_dict({'0.weight': cov_matrix_tensor})
+
+            # cov_reg = cov_matrix_tensor + 1e-6 * torch.eye(cov_matrix_tensor.size(0), 
+            #     device='cuda', dtype=cov_matrix_tensor.dtype)
+            # self.L = torch.linalg.cholesky(cov_reg)     
+        
+        if self.linear_path is not None:
+            self.cov_matrix_tensor = np.load(self.linear_path)
+            self.cov_matrix_tensor=torch.from_numpy(self.cov_matrix_tensor).to(device='cuda', dtype=torch.float32)
+
+            if self.update_linear:
+                self.cov_matrix_tensor.requires_grad = True
+            else:
+                self.cov_matrix_tensor.requires_grad = False
+            
+            if self.pretrain_linear:
+                print("Load corvariance from:", self.linear_path)
+            else:
+                # random initialize the cov_matrix_tensor
+
+                A = torch.randn(768, 32, device='cuda', dtype=torch.float32)
+                # normalize the matrix
+                A = F.normalize(A, p=2, dim=1)
+                # calculate the corvariance matrix
+                self.cov_matrix_tensor = A @ A.T
+                #  torch.mm(random_matrix, random_matrix.t()) / self.cov_matrix_tensor.size(0)
+                print(f"Random initialize the linear transform matrix: {self.cov_matrix_tensor}")
+
+
+
+            # self.linear_transform = nn.Sequential(
+            #     nn.Linear(768, 1000),
+            #     nn.ReLU(),
+            #     nn.Linear(1000, 768))
+
+            # if self.update_linear:
+            #     for param in self.linear_transform.parameters():
+            #         param.requires_grad = True
+            # else:
+            #     for param in self.linear_transform.parameters():
+            #         param.requires_grad = False
+
+
+            # if self.pretrain_linear:
+            #     load_result = self.linear_transform.load_state_dict(torch.load(self.linear_path))
+            #     print("Load linear transform from:", self.linear_path)
+
+            # # print("Missing keys:", load_result.missing_keys)
+            # # print("Unexpected keys:", load_result.unexpected_keys)
+
+
         if self.imbalance:            
             self.weight_lst = torch.zeros(200).cuda()
 
@@ -268,6 +394,9 @@ class DualPrompt(nn.Module):
             param.requires_grad = False
         self.backbone.fc.weight.requires_grad = True
         self.backbone.fc.bias.requires_grad   = True
+
+        # print("self.backbone: ", self.backbone)
+        # print("backbone_name: ", backbone_name)
 
         self.tasks = []
 
@@ -308,9 +437,14 @@ class DualPrompt(nn.Module):
         self.task_id = 0 # if _convert_train_task is not called, task will undefined
 
         if self.load_pt:
-                        
-            e_load_path = 'pretrained_prompt/e_prompt.pt'
-            g_load_path = 'pretrained_prompt/g_prompt.pt'
+
+            if self.p_path is not None:
+                e_load_path = self.p_path + '/T4_e_prompt.pt'
+                g_load_path = self.p_path + '/T4_g_prompt.pt'
+
+            else:            
+                e_load_path = 'pretrained_prompt/e_prompt.pt'
+                g_load_path = 'pretrained_prompt/g_prompt.pt'
                         
             print('loading from: {}'.format(g_load_path))
             # self.g_prompt.load(g_load_path, include_key=False)
@@ -531,6 +665,27 @@ class DualPrompt(nn.Module):
             x = self.backbone.pos_drop(token_appended + self.backbone.pos_embed)
             query = self.backbone.blocks(x)
             query = self.backbone.norm(query)[:, 0]
+
+            if self.linear_path is not None:
+                # query = self.linear_transform(query)
+                # check where self.linear_transform is updated
+                # print(self.linear_transform[0].weight.data.clone())
+                Fj = transform_to_target_covariance(query, self.cov_matrix_tensor)
+                Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                query = (1-self.cor_coef)*query + self.cor_coef*Fj
+                
+                # print(f"self.cor_coef: {self.cor_coef}")
+                # print(f"query: {query[0][0]}")
+                # print(f"transfor: {Fj[0][0]}")
+
+               
+                # print(f"query: {query[0][0]}")
+
+            # if self.cor_path is not None:
+            #     # query = torch.linalg.solve_triangular(
+            #     #     self.L.T, query.T, upper=True, unitriangular=False).T
+            #     query = self.linear_corvariance(query)
+
         # if self.training:
         #     self.features = torch.cat((self.features, query.detach().cpu()), dim = 0)
 
@@ -587,7 +742,37 @@ class DualPrompt(nn.Module):
             x = self.prompt_func(self.backbone.pos_drop(token_appended + self.backbone.pos_embed), g_p, e_p)
             x = self.backbone.norm(x)
             cls_token = x[:, 0]
-            x = self.backbone.fc(x[:, 0])
+
+            # if self.linear_path is not None:
+            #     cls_token = self.linear_transform(cls_token)
+            #     # check where self.linear_transform is updated
+            #     # print(self.linear_transform[0].weight.data.clone())
+
+            if self.cor_path is not None:
+                # query = torch.linalg.solve_triangular(
+                #     self.L.T, query.T, upper=True, unitriangular=False).T
+                Fj = transform_to_target_covariance(cls_token, self.cov_matrix_tensor)
+                Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                cls_token = (1-self.cor_coef)*cls_token + self.cor_coef*Fj
+
+                # print(self.cov_matrix_tensor[0][0])
+
+            # x = self.backbone.fc(x[:, 0])
+            if self.ranpac:
+                if  self.cov_matrix_tensor == []:
+                    # calculate the covariance matrix of the feature
+                    # centered = cls_token - torch.mean(cls_token.detach().clone(), dim=0, keepdim=True)
+                    # self.cov_matrix_tensor = (centered.detach().clone().T @ centered) / (centered.detach().clone().shape[0] - 1)
+                    self.cov_matrix_tensor = torch.cov(cls_token.detach().clone().T, correction=1)
+                    # print(f"shape of cov_matrix_tensor: {self.cov_matrix_tensor.shape}")
+                else:
+                    self.cov_matrix_tensor = self.ranpac_coef * self.cov_matrix_tensor + (1-self.ranpac_coef) * torch.cov(cls_token.detach().clone().T, correction=1)
+                    Fj = transform_to_target_covariance(cls_token, self.cov_matrix_tensor)
+                    Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                    cls_token = (1-self.cor_coef)*cls_token + self.cor_coef*Fj
+
+
+            x = self.backbone.fc(cls_token)
             if self.learnable_mask:
                 x = x * learned_mask
             if self.prompt_func_type != 'prefix_tuning_add':
@@ -597,6 +782,126 @@ class DualPrompt(nn.Module):
                 return x, cls_token
             else:
                 return x
+
+    def forward_feature(self, inputs : torch.Tensor, return_feat=False) :
+        with torch.no_grad():
+            x = self.backbone.patch_embed(inputs)
+            B, N, D = x.size()
+
+            cls_token = self.backbone.cls_token.expand(B, -1, -1)
+            token_appended = torch.cat((cls_token, x), dim=1)
+            x = self.backbone.pos_drop(token_appended + self.backbone.pos_embed)
+            query = self.backbone.blocks(x)
+            query = self.backbone.norm(query)[:, 0]
+
+            if self.linear_path is not None:
+                # query = self.linear_transform(query)
+                # check where self.linear_transform is updated
+                # print(self.linear_transform[0].weight.data.clone())
+                Fj = transform_to_target_covariance(query, self.cov_matrix_tensor)
+                Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                query = (1-self.cor_coef)*query + self.cor_coef*Fj
+                
+                # print(f"self.cor_coef: {self.cor_coef}")
+                # print(f"query: {query[0][0]}")
+                # print(f"transfor: {Fj[0][0]}")
+
+               
+                # print(f"query: {query[0][0]}")
+
+            # if self.cor_path is not None:
+            #     # query = torch.linalg.solve_triangular(
+            #     #     self.L.T, query.T, upper=True, unitriangular=False).T
+            #     query = self.linear_corvariance(query)
+
+
+        if self.g_prompt is not None:
+            g_p = self.g_prompt.prompts[0]
+            g_p = g_p.expand(B, -1, -1)
+
+            if self.g_proj and g_ratio:
+                g_p = self.g_ratio*self.proj_g_pt(g_p)+g_p
+            elif self.g_proj:
+                g_p = self.proj_g_pt(g_p)+g_p
+            
+        else:
+            g_p = None
+        if self.e_prompt is not None and self.prompt_func_type != 'prefix_tuning_add':
+                start_id = self.task_id * self.num_pt_per_task
+                end_id = (self.task_id+1) * self.num_pt_per_task
+                if self.training and start_id < self.e_pool:
+                    if self.memory_size > 0  and self.load_pt:
+                        res_e = self.e_prompt(query)
+                    elif self.ISA:
+                        res_e = self.e_prompt(query)
+                    else:
+                        res_e = self.e_prompt(query, s=start_id, e=end_id)
+
+                # elif not self.training and start_id < self.e_pool:
+                #     res_e = self.e_prompt(query, s=0, e=end_id)
+                else:
+                    res_e = self.e_prompt(query)
+
+                if self.learnable_mask:
+                    e_s, e_p, learned_mask = res_e
+                else:
+                    e_s, e_p = res_e
+                if self.e_proj  and e_ratio:
+                    e_p = self.e_ratio*self.proj_e_pt(e_p)+e_p
+                elif self.e_proj :
+                    e_p = self.proj_e_pt(e_p)+e_p
+
+        else:
+            e_p = None
+            e_s = 0
+
+        if G_dist and self.load_pt:
+            x, dist_loss = self.prompt_func(self.backbone.pos_drop(token_appended + self.backbone.pos_embed), g_p, e_p)
+            x = self.backbone.norm(x)
+            x = self.backbone.fc(x[:, 0])
+
+            self.similarity = e_s.mean()
+            dist_loss = L1Loss(self.g_prompt.prompts[0], self.g_pt_prompt[0].detach().clone())
+            return x, dist_loss
+
+        else:
+            x = self.prompt_func(self.backbone.pos_drop(token_appended + self.backbone.pos_embed), g_p, e_p)
+            x = self.backbone.norm(x)
+            cls_token = x[:, 0]
+
+            # if self.linear_path is not None:
+            #     cls_token = self.linear_transform(cls_token)
+            #     # check where self.linear_transform is updated
+            #     # print(self.linear_transform[0].weight.data.clone())
+
+            if self.cor_path is not None:
+                # query = torch.linalg.solve_triangular(
+                #     self.L.T, query.T, upper=True, unitriangular=False).T
+                Fj = transform_to_target_covariance(cls_token, self.cov_matrix_tensor)
+                Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+                if self.only_test:
+                    self.pre_features = torch.cat((self.pre_features, cls_token.detach().cpu()), dim = 0)
+                    self.post_features = torch.cat((self.post_features, Fj.detach().cpu()), dim = 0)
+                cls_token = (1-self.cor_coef)*cls_token + self.cor_coef*Fj
+                if self.only_test:
+                    self.final_features = torch.cat((self.final_features, cls_token.detach().cpu()), dim = 0)
+                # print(self.cov_matrix_tensor[0][0])
+
+            # x = self.backbone.fc(x[:, 0])
+            
+
+
+            x = self.backbone.fc(cls_token)
+            if self.learnable_mask:
+                x = x * learned_mask
+            if self.prompt_func_type != 'prefix_tuning_add':
+                self.similarity = e_s.mean()
+            
+            if return_feat:
+                return x, cls_token
+            else:
+                return x
+
 
     def convert_train_task(self, task : torch.Tensor, **kwargs):
     

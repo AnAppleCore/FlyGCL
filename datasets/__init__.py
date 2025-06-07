@@ -1,4 +1,5 @@
 from .CUB200 import CUB200
+from .CARS196 import CARS196
 from .TinyImageNet import TinyImageNet
 from .OnlineIterDataset import OnlineIterDataset
 from .Imagenet_R import Imagenet_R
@@ -17,6 +18,7 @@ from torchvision.datasets import CIFAR10, CIFAR100, Places365 #, ImageNet
 
 __all__ = [
     "CUB200",
+    "CARS196",
     "TinyImageNet",
     "CIFAR10",
     "CIFAR100",

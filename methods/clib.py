@@ -8,7 +8,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from torch.utils.tensorboard import SummaryWriter
 from scipy.stats import ttest_ind
 
 import gc
@@ -19,7 +18,6 @@ from datasets import *
 from utils.onlinesampler import OnlineSampler, OnlineTestSampler
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 class CLIB(ER):
     def __init__(self, *args, **kwargs):

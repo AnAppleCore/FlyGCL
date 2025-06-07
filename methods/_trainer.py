@@ -57,6 +57,10 @@ class _Trainer():
         self.n_worker    = kwargs.get("n_worker")
         self.lr  = kwargs.get("lr")
 
+        self.meta_path =  kwargs.get("meta_path")
+        self.note = kwargs.get("note")
+        self.only_test = kwargs.get("only_test")
+        self.fix_bcb = kwargs.get("fix_bcb")
         self.init_model  = kwargs.get("init_model")
         self.init_opt    = kwargs.get("init_opt")
         self.topk    = kwargs.get("topk")
@@ -125,7 +129,6 @@ class _Trainer():
         self.exposed_classes = []
         
         os.makedirs(f"{self.log_path}/logs/{self.dataset}/{self.note}", exist_ok=True)
-        os.makedirs(f"{self.log_path}/tensorboard/{self.dataset}/{self.note}", exist_ok=True)
         return
 
     def setup_distributed_dataset(self):
@@ -135,6 +138,7 @@ class _Trainer():
         "cifar100": CIFAR100,
         "tinyimagenet": TinyImageNet,
         "cub200": CUB200,
+        "cars196": CARS196,
         "cub175": CUB175,
         "cubrandom": CUBRandom,
         "imagenet": ImageNet,
@@ -149,7 +153,7 @@ class _Trainer():
         }
 
         mean, std, n_classes, inp_size, _ = get_statistics(dataset=self.dataset)
-        if self.model_name in ['vit', 'vit_finetune', 'L2P', 'mvp', 'DualPrompt', 'LinearProbe', 'vit_init_last']:
+        if self.model_name in ['vit', 'vit_finetune', 'L2P', 'mvp', 'DualPrompt', 'LinearProbe', 'vit_init_last', 'slca', 'CodaPrompt', 'ewc']:
             print(self.model_name)
             inp_size = 224    
         self.n_classes = n_classes
@@ -198,7 +202,7 @@ class _Trainer():
         print('=================_r{}================='.format(_r))
         print('=================_r{}================='.format(_r))
 
-        if 'imagenet' in self.dataset or 'cub' in self.dataset:
+        if 'imagenet' in self.dataset or 'cub' in self.dataset or 'car' in self.dataset:
             self.load_transform = transforms.Compose([
                 transforms.Resize((inp_size, inp_size)),
                 transforms.ToTensor()])
@@ -218,6 +222,8 @@ class _Trainer():
         self.test_sampler    = OnlineTestSampler(self.test_dataset, [], _w, _r)
         # self.train_dataloader    = DataLoader(self.online_iter_dataset, batch_size=self.temp_batchsize, sampler=self.train_sampler,pin_memory=False, num_workers=self.n_worker)
         self.train_dataloader    = DataLoader(self.online_iter_dataset, batch_size=self.temp_batchsize, sampler=self.train_sampler,pin_memory=False, num_workers=0)
+        # print(f"train_dataloader: {len(self.train_dataloader)}")
+        # print(train_dataloader[0])
         self.mask = torch.zeros(self.n_classes, device=self.device) - torch.inf
         self.seen = 0
         if not hasattr(self, 'memory'):
@@ -227,6 +233,45 @@ class _Trainer():
 
         print("Building model...")
         self.model = select_model(self.model_name, self.dataset, self.n_classes,self.selection_size, self.kwargs).to(self.device)
+        if self.meta_path is not None:
+
+                # import timm
+                # pre_trained_model = timm.create_model("vit_base_patch16_224", pretrained=True)
+
+                # torch.save(pre_trained_model.state_dict(), "/home/DGIL/MISA/results/output/aa.pth")
+                # model_infos = pre_trained_model.state_dict()
+                # pre_trained_model.head = nn.Identity()
+                # model_infos = torch.load("/home/DGIL/MISA/results/output/aa.pth")
+                
+                model_infos = torch.load(self.meta_path)
+
+                filtered_model_infos = {k: v for k, v in model_infos.items()if not k.startswith("head.")}
+                # filtered_model_infos = {k: v for k, v in model_infos.items()if not k.startswith("fc.")}
+                if self.model_name == "vit_finetune" or self.model_name == "slca" or self.model_name == "vit":
+                    load_result = self.model.load_state_dict(filtered_model_infos, strict=False)
+                else:
+                    load_result = self.model.backbone.load_state_dict(filtered_model_infos, strict=False)
+                # print(self.model.backbone)
+                # print(a)
+                print(f"load backbone from {self.meta_path}")
+
+                # model_dict = self.model.backbone.state_dict()
+                # pretrained_dict  = {k: v for k, v in filtered_model_infos.items() if k != 'pos_embed'}
+                # if 'pos_embed' in model_dict:
+                #     pretrained_pos_embed = filtered_model_infos["pos_embed"] # (1,197,768)
+                #     current_pos_embed = self.model.backbone.pos_embed.data # (1,222,768)
+                #     current_pos_embed[:, :197, :] = pretrained_pos_embed
+                #     self.model.backbone.pos_embed.data = current_pos_embed
+                #     print("load pos_embed successfully")
+                # load_result = self.model.backbone.load_state_dict(pretrained_dict, strict=False)
+                # print(f"load backbone from {self.meta_path}")
+
+                ## miss in pretrained model
+                print("Missing keys:", load_result.missing_keys)
+                print("Unexpected keys:", load_result.unexpected_keys)
+                successful_keys = set(filtered_model_infos.keys()) - set(load_result.unexpected_keys)
+                print("Successfully loaded keys:", successful_keys)
+        
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
         if self.loadweakvit:
@@ -267,9 +312,23 @@ class _Trainer():
                 self.model.head.weight.requires_grad = False
                 self.model.head.bias.requires_grad = False
 
-        
         self.model.to(self.device)
         self.model_without_ddp = self.model
+        if self.only_test or self.fix_bcb:
+            self.model.eval()
+            self.model_without_ddp.eval()
+            for name, param in self.model_without_ddp.named_parameters():
+                if 'backbone.fc' not in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
+            for name, param in self.model.named_parameters():
+                if 'backbone.fc' not in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
+    
+
         if self.distributed:
             self.model = torch.nn.parallel.DistributedDataParallel(self.model)
             self.model._set_static_graph()
@@ -384,6 +443,7 @@ class _Trainer():
             hessian_eig_db = {}    
             Flag=True
             for epoch in range(self.num_epochs):
+                print(f"Epoch {epoch+1}/{self.num_epochs}")
                 for i, (images, labels, idx) in enumerate(self.train_dataloader):
                     if self.debug and (i+1) * self.temp_batchsize >= 500:
                         break
@@ -427,7 +487,8 @@ class _Trainer():
                         if self.isa:
                             # Save prompt
                             prompt_save_root = 'pretrained_prompt/'
-                            save_folder = 'MISA'
+                            # save_folder = 'MISA'
+                            save_folder = self.note
                             if not os.path.exists(os.path.join(prompt_save_root, save_folder)):
                                 # Create the directory if it does not exist
                                 os.makedirs(os.path.join(prompt_save_root, save_folder))
@@ -512,7 +573,8 @@ class _Trainer():
             if self.isa:
                 # Save prompt
                 prompt_save_root = 'pretrained_prompt/'
-                save_folder = 'MISA'
+                # save_folder = 'MISA'
+                save_folder = self.note
                 prompt_name = 'prompt'
                 if not os.path.exists(os.path.join(prompt_save_root, save_folder)):
                     # Create the directory if it does not exist
@@ -553,6 +615,20 @@ class _Trainer():
                             p_proj = self.model.proj_e_pt(p)+p
                             torch.save(p_proj, os.path.join(prompt_save_root, save_folder, 'T{}_p_proj_{}_'.format(task_id,e) + prompt_name))
 
+            if self.only_test:
+                prompt_save_root = 'pretrained_prompt/'
+                # save_folder = 'MISA'
+                save_folder = self.note
+                save_path = os.path.join(prompt_save_root, save_folder)
+                if not os.path.exists(save_path):
+                    # Create the directory if it does not exist
+                    os.makedirs(save_path)
+
+                torch.save({ 'final_features': self.model.final_features.cpu().numpy(), 
+                            'pre_features': self.model.pre_features.cpu().numpy(),
+                            'post_features': self.model.post_features.cpu().numpy(),
+                            'labels': self.labels.cpu().numpy()}, os.path.join(save_path, f'T{task_id}_features.pt'))
+                
         if self.is_main_process():        
 
             # Accuracy (A)

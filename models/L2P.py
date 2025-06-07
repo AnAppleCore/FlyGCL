@@ -4,22 +4,42 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from torch.utils.tensorboard import SummaryWriter
 
 import timm
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
 
 from models.vit import _create_vision_transformer
+import numpy as np
 
 logger = logging.getLogger()
-writer = SummaryWriter("tensorboard")
 
 T = TypeVar('T', bound = 'nn.Module')
 
 default_cfgs['vit_base_patch16_224_l2p'] = _cfg(
         url='https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz',
         num_classes=21843)
+
+def stable_cholesky(matrix, reg=1e-4):
+    # try:
+    #     return torch.linalg.cholesky(matrix)
+    # except torch._C._LinAlgError:
+        reg_matrix = reg * torch.eye(matrix.size(0), device=matrix.device, dtype=matrix.dtype)
+        return torch.linalg.cholesky(matrix + reg_matrix)
+
+def transform_to_target_covariance(Fi, target_cor, reg=1e-4):
+    Fi_centered = Fi - Fi.mean(dim=0)
+    n_samples = Fi_centered.size(0)
+    C = (Fi_centered.T @ Fi_centered) / (n_samples - 1)
+    
+    L = stable_cholesky(C, reg)
+    L_cor = stable_cholesky(target_cor, reg)
+    
+    A = torch.linalg.solve(L, L_cor)
+    
+    Fj = Fi_centered @ A
+    return Fj
+
 
 # Register the backbone model to timm
 @register_model
@@ -104,7 +124,7 @@ class Prompt(nn.Module):
 
 
 
-load = True 
+# load = True 
 
 class L2P(nn.Module):
     def __init__(self,
@@ -124,6 +144,30 @@ class L2P(nn.Module):
         self.keys     = torch.empty(0)
 
         self.load_pt = kwargs.get("load_pt")
+        self.cor_path = kwargs.get("cor_path")
+        self.update_cor = kwargs.get("update_cor")
+        self.pretrain_cor = kwargs.get("pretrain_cor")
+        self.cor_coef = kwargs.get("cor_coef")
+
+        self.linear_path= kwargs.get("linear_path")
+        self.update_linear = kwargs.get("update_linear")
+        self.pretrain_linear = kwargs.get("pretrain_linear")
+
+        if self.cor_path is not None:
+            self.cov_matrix_tensor = np.load(self.cor_path)
+            self.cov_matrix_tensor=torch.from_numpy(self.cov_matrix_tensor).to(device='cuda', dtype=torch.float32)
+
+            if self.update_cor:
+                self.cov_matrix_tensor.requires_grad = True
+            else:
+                self.cov_matrix_tensor.requires_grad = False
+            
+            if self.pretrain_cor:
+                print("Load corvariance from:", self.cor_path)
+            else:
+                # random initialize the cov_matrix_tensor
+                self.cov_matrix_tensor = torch.randn(768, 768, device='cuda', dtype=torch.float32)
+
 
         if backbone_name is None:
             raise ValueError('backbone_name must be specified')
@@ -159,18 +203,14 @@ class L2P(nn.Module):
 
         self.register_buffer('simmilarity', torch.zeros(1), persistent=False)
         self.register_buffer('unsimmilarity', torch.zeros(1), persistent=False)
-
+   
         if self.load_pt:
+            # raise NotImplementedError('Specific pretrained prompt for L2P is not provided. But you can load MISA prompt for L2P if you want (comment this line and uncomment the following code).')
             e_load_path = 'pretrained_prompt/e_prompt.pt'
             g_load_path = 'pretrained_prompt/g_prompt.pt'
     
-        if self.load_pt:
-            raise NotImplementedError('Specific pretrained prompt for L2P is not provided. But you can load MISA prompt for L2P if you want (comment this line and uncomment the following code).')
-            # e_load_path = 'pretrained_prompt/e_prompt.pt'
-            # g_load_path = 'pretrained_prompt/g_prompt.pt'
-    
-            # print('loading from: {}'.format(g_load_path))
-            # pt_gpt = torch.load(g_load_path)
+            print('loading from: {}'.format(g_load_path))
+            pt_gpt = torch.load(g_load_path)
             # self.prompt.load(pt_gpt.prompts)
 
     def forward(self, inputs : torch.Tensor, **kwargs) -> torch.Tensor:
@@ -197,7 +237,12 @@ class L2P(nn.Module):
         x = self.backbone.norm(x)
         x = x[:, 1:self.selection_size * self.prompt_len + 1].clone()
         x = x.mean(dim=1)
-        x = self.backbone.fc_norm(x)
+        if self.cor_path is not None:
+            Fj = transform_to_target_covariance(x, self.cov_matrix_tensor)
+            Fj = Fj / torch.norm(Fj, dim=1, keepdim=True)
+            x = (1-self.cor_coef)*x + self.cor_coef*Fj
+            
+        x = self.backbone.fc_norm(x)  
         x = self.backbone.fc(x)
         return x
     
@@ -222,4 +267,4 @@ class L2P(nn.Module):
     #     ten = super().eval()
     #     self.backbone.eval()
     #     return ten
-    
+  

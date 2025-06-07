@@ -9,6 +9,7 @@ from timm.models import create_model
 from models.vit import _create_vision_transformer
 from models.L2P import L2P
 from models.dualprompt import DualPrompt
+from models.codaprompt import CodaPrompt
 from models.mvp import MVP
 from optim.sam import SAM
 from optim.fam import FAM
@@ -63,6 +64,24 @@ def select_optimizer(opt_name, lr, model):
         opt = optim.SGD(
             model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=1e-4
         )
+    elif opt_name == 'sgd_sl':
+        fc_params = []
+        other_params = []
+        fc_params_name = []
+        other_params_name = []
+        
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if 'fc.' in name:  # If the parameter is from a fully-connected layer
+                    fc_params.append(param)
+                    fc_params_name.append(name)
+                else:  # All other layers
+                    other_params.append(param)
+                    other_params_name.append(name)
+        opt = optim.SGD([
+                        {'params': other_params, 'lr': lr},       # Learning rate lr1 for fully-connected layers
+                        {'params': fc_params, 'lr': 0.005}     # Learning rate lr2 for all other layers
+                    ], weight_decay=5e-4)
     elif opt_name == "sam":
         base_optimizer = optim.Adam
         opt = SAM(model.parameters(), base_optimizer, lr=lr, weight_decay=0)
@@ -135,7 +154,11 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
         opt["depth"] = 12
     elif model_name == "DualPrompt":
         opt["depth"] = 12
+    elif model_name == "CodaPrompt":
+        opt["depth"] = 12
     elif model_name == "mvp":
+        opt["depth"] = 12
+    elif model_name == "slca":
         opt["depth"] = 12
     else:
         raise NotImplementedError(
@@ -144,7 +167,7 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
 
     if model_name == "vit":
         model = timm.create_model(
-                            "vit_small_patch16_224",pretrained=True,num_classes=num_classes, # vit_small_patch16_224
+                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes, # vit_small_patch16_224
                             drop_rate=0.,drop_path_rate=0.,drop_block_rate=None)
         for n, p in model.named_parameters():
             if "fc." in n:
@@ -181,12 +204,18 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
         model = timm.create_model(
                             "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
                             drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,) 
+    elif model_name == "slca":
+        model = timm.create_model(
+                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
+                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,) 
+    elif model_name == "CodaPrompt":
+        model = CodaPrompt(backbone_name="vit_base_patch16_224", pretrained=True, class_num=num_classes, **kwargs)
     elif model_name == "L2P":
-        model = L2P(backbone_name="vit_base_patch16_224", class_num=num_classes)
+        model = L2P(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
     elif model_name == "DualPrompt":
         model = DualPrompt(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
     elif model_name == "mvp":
-        model = MVP(backbone_name="vit_small_patch16_224", class_num=num_classes, selection_size = selection_size)
+        model = MVP(backbone_name="vit_base_patch16_224", class_num=num_classes, selection_size = selection_size)
     elif model_name == "resnet18":
         model = timm.create_model('resnet18', num_classes=num_classes,pretrained=True)
         for n, p in model.named_parameters():
@@ -194,6 +223,21 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
                 p.requires_grad = True    
             else:
                 p.requires_grad = False
+    elif model_name == "resnet34":
+        import torchvision.models as models
+        model = models.resnet34(pretrained=True)
+        model.fc = nn.Linear(512, num_classes)
+        for n, p in model.named_parameters():
+            if "fc." in n:
+                p.requires_grad = True    
+            else:
+                p.requires_grad = False
+        # model = timm.create_model('resnet34', num_classes=num_classes,pretrained=True)
+        # for n, p in model.named_parameters():
+        #     if "fc." in n:
+        #         p.requires_grad = True    
+        #     else:
+        #         p.requires_grad = False
     else:
         raise NotImplementedError(
             "Please select the appropriate model"

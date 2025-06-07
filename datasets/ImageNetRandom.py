@@ -27,7 +27,8 @@ class ImageNetRandom(ImageFolder):
         self.target_transform = target_transform
         self.train = train
 
-        self.fpath = os.path.join(root, 'imgnt')
+        # self.fpath = os.path.join(root, 'imgnt')
+        self.fpath = root
 
         if not os.path.exists(self.fpath):
             if not download:

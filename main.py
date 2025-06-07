@@ -9,6 +9,7 @@ from methods.clib import CLIB
 from methods.L2P import L2P
 from methods.rainbow_memory import RM
 from methods.Finetuning import FT
+from methods.slca import SLCA
 from methods.lwf import LwF
 from methods.derpp import DERPP 
 from methods.er_ace import ERACE
@@ -17,8 +18,7 @@ from methods.mvp import MVP
 from methods.dualprompt import DualPrompt
 from methods.dualprompt_sam import DualPrompt as sam
 from methods.dualprompt_fam import DualPrompt as fam
-import random
-import numpy as np
+from methods.codaprompt import CodaPrompt
 import random
 import numpy as np
 
@@ -26,7 +26,9 @@ from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # torch.backends.cudnn.enabled = False
-methods = { "er": ER, "clib":CLIB, 'L2P':L2P, 'rm':RM, 'Finetuning':FT, 'mvp':MVP, 'DualPrompt':DualPrompt, 'sam': sam, 'fam':fam, 'lwf':LwF, 'derpp': DERPP,  'erace': ERACE, 'eracep': ERACEP, }
+methods = { "er": ER, "clib":CLIB, 'L2P':L2P, 'rm':RM, 'Finetuning':FT, 'mvp':MVP, 'DualPrompt':DualPrompt, 
+           'sam': sam, 'fam':fam, 'lwf':LwF, 'derpp': DERPP,  'erace': ERACE, 'eracep': ERACEP, 'slca':SLCA, 
+           'CodaPrompt': CodaPrompt}
 
 torch.backends.cudnn.enabled = False
 os.environ["CUDA_LAUNCH_BLOCKING"]="1"

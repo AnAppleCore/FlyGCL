@@ -37,6 +37,43 @@ def base_parser():
         "--model_name", type=str, default="resnet18", help="Model name"
     )
 
+    # meta
+    parser.add_argument("--meta_path", type=str, default=None,
+         help="Path of pre-trained model")
+
+    parser.add_argument("--cor_path", type=str, default=None,
+         help="Path of corvariance matrix")
+    parser.add_argument("--update_cor", action="store_true", default=False,
+         help="update_cor")
+    parser.add_argument("--pretrain_cor", action="store_true", default=False,
+         help="using pre-trained corvariance matrix")
+    parser.add_argument("--cor_coef", type=float, default=1.0,
+         help="Coefficient of corvariance matrix")
+
+
+
+    parser.add_argument("--linear_path", type=str, default=None,
+         help="Path of linear_transform")  
+    parser.add_argument("--update_linear", action="store_true", default=False,
+         help="update_transform")
+    parser.add_argument("--pretrain_linear", action="store_true", default=False,
+         help="using pre-trained linear_transform")
+
+    parser.add_argument("--p_path", type=str, default=None,
+         help="Path of pre-trained prompt")
+    parser.add_argument("--only_test", action="store_true", default=False,
+         help="update_transform")
+    parser.add_argument("--fix_bcb", action="store_true", default=False,
+         help="update_transform")
+
+    parser.add_argument("--ranpac", action="store_true", default=False,
+         help="update_transform")
+    parser.add_argument("--ranpac_coef", type=float, default=0.5,
+         help="Coefficient of corvariance matrix")
+
+
+   
+
     # My changes: 
     parser.add_argument("--num_epochs", type=int, default=1, help="number of epoch.")
     parser.add_argument("--load_pt", action="store_true", default=False)
