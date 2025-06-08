@@ -1,6 +1,7 @@
 # argument 1: gpu id
 # argument 2: seed
 # argument 3: dataset
+# argument 4: postfix
 
 screen -dmS fly1 bash ./scripts/run_baselines_fly.sh 1 1 cifar100
 
@@ -33,3 +34,25 @@ screen -dmS l2p3 bash ./scripts/run_baselines_l2p.sh 3 3 cub200
 screen -dmS l2p4 bash ./scripts/run_baselines_l2p.sh 4 4 cub200
 
 screen -dmS l2p5 bash ./scripts/run_baselines_l2p.sh 5 5 cub200
+
+
+screen -dmS coda1 bash ./scripts/run_baselines_coda.sh 1 1 imagenet-r
+
+screen -dmS coda2 bash ./scripts/run_baselines_coda.sh 2 2 imagenet-r
+
+screen -dmS coda3 bash ./scripts/run_baselines_coda.sh 3 3 imagenet-r
+
+screen -dmS coda4 bash ./scripts/run_baselines_coda.sh 4 4 imagenet-r
+
+screen -dmS coda5 bash ./scripts/run_baselines_coda.sh 5 5 imagenet-r
+
+
+screen -dmS coda1 bash ./scripts/run_baselines_coda.sh 1 1 cub200
+
+screen -dmS coda2 bash ./scripts/run_baselines_coda.sh 2 2 cub200
+
+screen -dmS coda3 bash ./scripts/run_baselines_coda.sh 3 3 cub200
+
+screen -dmS coda4 bash ./scripts/run_baselines_coda.sh 4 4 cub200
+
+screen -dmS coda5 bash ./scripts/run_baselines_coda.sh 5 5 cub200
