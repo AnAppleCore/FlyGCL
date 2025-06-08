@@ -151,7 +151,7 @@ class _Trainer():
         }
 
         mean, std, n_classes, inp_size, _ = get_statistics(dataset=self.dataset)
-        if self.model_name in ['vit', 'vit_finetune', 'L2P', 'mvp', 'DualPrompt', 'LinearProbe', 'vit_init_last', 'slca', 'CodaPrompt', 'ewc']:
+        if self.model_name in ['vit', 'vit_finetune', 'L2P', 'FlyPrompt', 'mvp', 'DualPrompt', 'LinearProbe', 'vit_init_last', 'slca', 'CodaPrompt', 'ewc']:
             print(self.model_name)
             inp_size = 224    
         self.n_classes = n_classes

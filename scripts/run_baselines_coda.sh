@@ -16,7 +16,7 @@ echo "Using GPU: $GPU_ID"
 
 # Common experiment settings
 N_TASKS=5
-N=70  # Disjoint Class Ratio (m) = 70%
+N=50  # Disjoint Class Ratio (m) = 50%
 M=10  # Blurry Sample Ratio (n) = 10%
 GPU_TRANSFORM="--gpu_transform"
 USE_AMP="--use_amp"
@@ -50,6 +50,8 @@ case $DATASET in
         ;;
 esac
 
+POSTFIX=${4:-""}
+
 # Function to run experiment
 run_experiment() {
     local METHOD=$1
@@ -60,8 +62,8 @@ run_experiment() {
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
     
-    local NOTE="${METHOD}_70_10"
-    
+    local NOTE="${METHOD}_${POSTFIX}"
+
     mkdir -p "./results/logs/${DATASET}/${NOTE}"
     
     echo "Running $METHOD experiment..."
@@ -101,8 +103,8 @@ echo "========================================="
 # Simple Methods
 echo "Running Simple Methods..."
 
-# L2P (Already uses prompt tuning, not prefix - this is correct as per analysis)
-run_experiment "L2P" "L2P" "adam" 0.005 0 3 ""
+# CODA-P (using prefix tuning)
+run_experiment "CodaPrompt" "CodaPrompt" "adam" 0.005 0 3 ""
 
 echo "========================================="
 echo "All baseline experiments completed!"

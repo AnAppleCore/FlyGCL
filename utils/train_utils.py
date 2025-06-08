@@ -10,6 +10,7 @@ from torch import optim
 
 from models.codaprompt import CodaPrompt
 from models.dualprompt import DualPrompt
+from models.FlyPrompt import FlyPrompt
 from models.L2P import L2P
 from models.mvp import MVP
 from models.vit import _create_vision_transformer
@@ -154,6 +155,8 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
         opt["depth"] = 12
     elif model_name == "L2P":
         opt["depth"] = 12
+    elif model_name == "FlyPrompt":
+        opt["depth"] = 12
     elif model_name == "DualPrompt":
         opt["depth"] = 12
     elif model_name == "CodaPrompt":
@@ -214,6 +217,8 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
         model = CodaPrompt(backbone_name="vit_base_patch16_224", pretrained=True, class_num=num_classes, **kwargs)
     elif model_name == "L2P":
         model = L2P(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
+    elif model_name == "FlyPrompt":
+        model = FlyPrompt(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
     elif model_name == "DualPrompt":
         model = DualPrompt(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
     elif model_name == "mvp":

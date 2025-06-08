@@ -50,6 +50,8 @@ case $DATASET in
         ;;
 esac
 
+POSTFIX=${4:-""}
+
 # Function to run experiment
 run_experiment() {
     local METHOD=$1
@@ -60,7 +62,7 @@ run_experiment() {
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
     
-    local NOTE="${METHOD}_50_10"
+    local NOTE="${METHOD}${POSTFIX}"
 
     mkdir -p "./results/logs/${DATASET}/${NOTE}"
     
