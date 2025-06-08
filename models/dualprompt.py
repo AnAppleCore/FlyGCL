@@ -1,16 +1,17 @@
 # test
-from typing import TypeVar, Iterable
+import logging
+from collections import OrderedDict
+from typing import Iterable, TypeVar
+
+import numpy as np
 import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import logging
-import timm
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
-from collections import OrderedDict
+
 from models.vit import _create_vision_transformer
-import numpy as np
 
 logger = logging.getLogger()
 

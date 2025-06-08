@@ -1,14 +1,14 @@
+import os
 from typing import Callable, Optional
 
-from scipy.io import loadmat
 import pandas as pd
-
-import os
 import torch
+from scipy.io import loadmat
 from torch.utils.data import Dataset, random_split
-from torchvision.datasets.utils import download_url
 from torchvision.datasets import ImageFolder
+from torchvision.datasets.utils import download_url
 from torchvision.transforms import transforms
+
 
 class CARS196(Dataset):
     def __init__(self, 

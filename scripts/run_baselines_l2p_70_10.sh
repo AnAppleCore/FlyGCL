@@ -16,12 +16,11 @@ echo "Using GPU: $GPU_ID"
 
 # Common experiment settings
 N_TASKS=5
-N=50  # Disjoint Class Ratio (m) = 50%
+N=70  # Disjoint Class Ratio (m) = 70%
 M=10  # Blurry Sample Ratio (n) = 10%
 GPU_TRANSFORM="--gpu_transform"
 USE_AMP="--use_amp"
-# SEEDS=${2:-1}  # Default seed 1, can be specified as second parameter
-SEEDS="1 2 3 4 5"
+SEEDS=${2:-"1 2 3 4 5"}  # Default to multiple seeds, can be specified as second parameter
 
 # Common training settings
 BATCHSIZE=64
@@ -61,11 +60,13 @@ run_experiment() {
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
     
-    local NOTE="${METHOD}_${DATASET}_baseline_standard"
+    local NOTE="${METHOD}_70_10"
+    
+    mkdir -p "./results/logs/${DATASET}/${NOTE}"
     
     echo "Running $METHOD experiment..."
     
-    python -W ignore main.py \
+    /home/yanhongwei/miniconda3/envs/DGIL/bin/python -W ignore main.py \
         --mode $METHOD \
         --dataset $DATASET \
         --n_tasks $N_TASKS --m $M --n $N \
@@ -85,7 +86,8 @@ run_experiment() {
         --rnd_NM \
         $GPU_TRANSFORM \
         $USE_AMP \
-        $EXTRA_ARGS
+        $EXTRA_ARGS \
+        > "./results/logs/${DATASET}/${NOTE}/seed_${SEEDS}_log.txt" 2>&1
 }
 
 echo "========================================="

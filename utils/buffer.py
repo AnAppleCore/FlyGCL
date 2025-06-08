@@ -3,11 +3,13 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
-import numpy as np
-from typing import Tuple
-from torchvision import transforms
 from copy import deepcopy
+from typing import Tuple
+
+import numpy as np
+import torch
+from torchvision import transforms
+
 
 def icarl_replay(self, dataset, val_set_split=0):
     """

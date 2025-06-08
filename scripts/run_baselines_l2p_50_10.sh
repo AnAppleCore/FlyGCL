@@ -60,7 +60,7 @@ run_experiment() {
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
     
-    local NOTE="${METHOD}_${DATASET}_baseline_standard"
+    local NOTE="${METHOD}_50_10"
 
     mkdir -p "./results/logs/${DATASET}/${NOTE}"
     
@@ -101,34 +101,8 @@ echo "========================================="
 # Simple Methods
 echo "Running Simple Methods..."
 
-# Seq FT (Sequential Fine-tuning)
-run_experiment "Finetuning" "vit_finetune" "sgd" 0.005 0 3 "--init_model --init_opt"
-
-# Seq FT (SL) - Sequential Fine-tuning with low backbone learning rate
-# Note: This would require separate implementation for different learning rates
-
-# Linear Probe - Backbone frozen, only train output layer
-run_experiment "Finetuning" "vit_finetune_last" "adam" 0.005 0 3 "--fix_bcb"
-
-# PTMs-based Continual Learning Methods
-echo "Running PTMs-based CL Methods..."
-
-# CODA-P (using prefix tuning)
-run_experiment "CodaPrompt" "CodaPrompt" "adam" 0.005 0 3 ""
-
 # L2P (Already uses prompt tuning, not prefix - this is correct as per analysis)
 run_experiment "L2P" "L2P" "adam" 0.005 0 3 ""
-
-# DualPrompt (uses prefix tuning)
-run_experiment "DualPrompt" "DualPrompt" "adam" 0.005 0 3 ""
-
-# PTMs-based Generalized Continual Learning Methods  
-echo "Running PTMs-based GCL Methods..."
-
-# MVP (with contrastive loss + logit masking)
-run_experiment "mvp" "mvp" "adam" 0.005 0 3 "--use_mask --use_contrastiv --use_afs --use_mcr"
-
-# Note: MISA implementation not found in current codebase
 
 echo "========================================="
 echo "All baseline experiments completed!"

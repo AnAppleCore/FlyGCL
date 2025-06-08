@@ -1,10 +1,10 @@
+import os
 from typing import Callable, Optional
 
-import os
 import torch
 from torch.utils.data import Dataset, random_split
-from torchvision.datasets.utils import download_url
 from torchvision.datasets import ImageFolder
+from torchvision.datasets.utils import download_url
 from torchvision.transforms import transforms
 
 

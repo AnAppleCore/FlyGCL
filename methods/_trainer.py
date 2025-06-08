@@ -1,29 +1,27 @@
-import os
-import sys
-import random
-import time
 import datetime
-import torch
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.multiprocessing as mp
 import os
 import random
+import sys
+import time
 from collections import defaultdict
+
 import numpy as np
 import torch
+import torch.backends.cudnn as cudnn
+import torch.cuda.profiler as profiler
+import torch.distributed as dist
+import torch.multiprocessing as mp
 # from randaugment import RandAugment
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
-from utils.onlinesampler import OnlineSampler, OnlineTestSampler
+
+from datasets import *
 from utils.augment import Cutout
 from utils.data_loader import get_statistics
-from datasets import *
+from utils.memory import DummyMemory, Memory
+from utils.onlinesampler import OnlineSampler, OnlineTestSampler
 from utils.train_utils import select_model, select_optimizer, select_scheduler
-from utils.memory import Memory, DummyMemory
-import torch.cuda.profiler as profiler
-from torch.utils.data import Subset
 
 # import pyprof
 # pyprof.init()
@@ -661,7 +659,6 @@ class _Trainer():
             if self.eval_period is not None:
                 np.save(f'{self.log_path}/logs/{self.dataset}/{self.note}/seed_{self.rnd_seed}_eval.npy', eval_results['test_acc'])
                 np.save(f'{self.log_path}/logs/{self.dataset}/{self.note}/seed_{self.rnd_seed}_eval_time.npy', eval_results['data_cnt'])
-    
 
     def profile_worker(self, gpu) -> None:
         self.memory = DummyMemory(datasize=self.memory_size, shape=(3,224,224))

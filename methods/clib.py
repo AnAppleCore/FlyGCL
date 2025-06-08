@@ -1,20 +1,19 @@
-import logging
 import copy
-import time
+import gc
+import logging
 import math
+import time
 
-import torch.distributed as dist
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from scipy.stats import ttest_ind
+from torch.utils.data import DataLoader
 
-import gc
-from methods.er_baseline import ER
-from utils.memory import MemoryBatchSampler, MemoryOrderedSampler
-from utils.memory import Memory
 from datasets import *
+from methods.er_baseline import ER
+from utils.memory import Memory, MemoryBatchSampler, MemoryOrderedSampler
 from utils.onlinesampler import OnlineSampler, OnlineTestSampler
 
 logger = logging.getLogger()

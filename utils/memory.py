@@ -1,7 +1,9 @@
+from typing import Optional, Sized
+
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
-from typing import Optional, Sized
+
 
 class Memory:
     def __init__(self, data_source=None) -> None:

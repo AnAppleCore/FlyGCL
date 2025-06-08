@@ -1,27 +1,24 @@
 # When we make a new one, we should inherit the Finetune class.
-import logging
 import copy
-import time
 import datetime
+import gc
+import logging
+import time
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torch import optim
+from torch.utils.data import DataLoader
 
-from utils.data_loader import ImageDataset, StreamDataset, MemoryDataset, cutmix_data, get_statistics
-from utils.train_utils import select_model, select_optimizer, select_scheduler
-
-from utils.memory import MemoryBatchSampler, MemoryOrderedSampler
-from methods.er_baseline import ER
-
-import torchvision.transforms as transforms
 from methods._trainer import _Trainer
-from utils.memory import Memory
-import gc
+from methods.er_baseline import ER
+from utils.data_loader import (ImageDataset, MemoryDataset, StreamDataset,
+                               cutmix_data, get_statistics)
+from utils.memory import Memory, MemoryBatchSampler, MemoryOrderedSampler
+from utils.train_utils import select_model, select_optimizer, select_scheduler
 
 logger = logging.getLogger()
 

@@ -1,20 +1,20 @@
-from .CUB200 import CUB200
+from torchvision.datasets import CIFAR10, CIFAR100, Places365
+
 from .CARS196 import CARS196
-from .TinyImageNet import TinyImageNet
-from .OnlineIterDataset import OnlineIterDataset
-from .Imagenet_R import Imagenet_R
-from .ImageNet import ImageNet
-from .ImageNetSub import ImageNetSub
-from .ImageNet100 import ImageNet100
-from .ImageNet900 import ImageNet900
-from .ImageNetRandom import ImageNetRandom
-from .NCH import NCH
 from .CUB175 import CUB175
+from .CUB200 import CUB200
 from .CUBrandom import CUBRandom
 from .GTSRB import GTSRB
+from .ImageNet import ImageNet
+from .ImageNet100 import ImageNet100
+from .ImageNet900 import ImageNet900
+from .Imagenet_R import Imagenet_R
+from .ImageNetRandom import ImageNetRandom
+from .ImageNetSub import ImageNetSub
+from .NCH import NCH
+from .OnlineIterDataset import OnlineIterDataset
+from .TinyImageNet import TinyImageNet
 from .WIKIART import WIKIART
-
-from torchvision.datasets import CIFAR10, CIFAR100, Places365 #, ImageNet
 
 __all__ = [
     "CUB200",

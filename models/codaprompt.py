@@ -1,17 +1,17 @@
 # test
-from typing import TypeVar, Iterable
+import copy
+import logging
+from collections import OrderedDict
+from typing import Iterable, TypeVar
+
 import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import logging
-import timm
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
-from collections import OrderedDict
-from models.vit import _create_vision_transformer
-import copy
 
+from models.vit import _create_vision_transformer
 
 logger = logging.getLogger()
 

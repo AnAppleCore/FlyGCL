@@ -1,9 +1,9 @@
-from typing import Callable, Optional
 import os
+from typing import Callable, Optional
 
+import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 from torchvision.datasets.utils import download_url
-import torchvision.transforms as transforms
 
 # TinyImageNet dataset class
 # Download code from https://github.com/JH-LEE-KR/ContinualDatasets/blob/main/continual_datasets/continual_datasets.py

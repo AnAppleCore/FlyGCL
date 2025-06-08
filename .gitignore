@@ -163,5 +163,9 @@ cython_debug/
 logs/
 .vscode/
 data/
+results/
+
+results
+
 *.ipynb
 *.pdf

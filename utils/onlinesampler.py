@@ -1,8 +1,10 @@
+from typing import Optional, Sized
+
 import torch
 import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import Sampler
-from  torch.utils.data.distributed import DistributedSampler 
-from typing import Optional, Sized
+
 
 class OnlineSampler(DistributedSampler):
     def __init__(self, data_source: Optional[Sized], num_tasks, m, n, rnd_seed, cur_iter = 0, varing_NM = False, num_replicas=None, rank=None) -> None:

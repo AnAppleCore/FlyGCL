@@ -1,38 +1,25 @@
+import copy
+import datetime
+import gc
+import logging
+import time
 from typing import TypeVar
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.distributed as dist
-import logging
-import copy
-
-import torch
-import torch.nn as nn
-
-import logging
-import copy
-import time
-import datetime
-
-import gc
-import torch
-import torch.nn as nn
-
-from methods._trainer import _Trainer
-
-from utils.train_utils import select_optimizer, select_scheduler
-
-from timm.models.registry import register_model
-from timm.models.vision_transformer import _cfg, default_cfgs
-from models.vit import _create_vision_transformer
-from utils.memory import MemoryBatchSampler
-from torch.utils.data import DataLoader
-
-from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+import torch.distributed as dist
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn.manifold import TSNE
+from timm.models.registry import register_model
+from timm.models.vision_transformer import _cfg, default_cfgs
+from torch.utils.data import DataLoader
 
+from methods._trainer import _Trainer
+from models.vit import _create_vision_transformer
+from utils.memory import MemoryBatchSampler
+from utils.train_utils import select_optimizer, select_scheduler
 
 logger = logging.getLogger()
 

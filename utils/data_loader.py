@@ -1,16 +1,17 @@
 import logging.config
 import os
-from typing import List, Optional, Callable
 import time
+from time import perf_counter
+from typing import Callable, List, Optional
 
-import PIL
 import numpy as np
 import pandas as pd
+import PIL
 import torch
-from torchvision import transforms
 from torch.utils.data import Dataset
+from torchvision import transforms
+
 from datasets import *
-from time import perf_counter
 
 logger = logging.getLogger()
 

@@ -2,14 +2,11 @@
 # https://github.com/DeepVoltaire/AutoAugment
 
 
-import numpy as np
-from PIL import ImageOps
-
-from PIL import Image, ImageEnhance, ImageOps
-import numpy as np
+import logging
 import random
 
-import logging
+import numpy as np
+from PIL import Image, ImageEnhance, ImageOps
 
 logger = logging.getLogger()
 

@@ -1,5 +1,6 @@
-from torch import nn
 import copy
+
+from torch import nn
 
 
 class ConvBlock(nn.Module):

@@ -1,11 +1,10 @@
-from typing import TypeVar, Iterable
+import logging
+from typing import Iterable, TypeVar
+
 import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import logging
-
-import timm
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
 

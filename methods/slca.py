@@ -1,16 +1,14 @@
 # When we make a new one, we should inherit the Finetune class.
+import gc
 import logging
 
 import numpy as np
 import torch
+import torchvision.transforms as transforms
 
+from methods._trainer import _Trainer
 from utils.data_loader import cutmix_data
 from utils.train_utils import select_scheduler
-import gc
-
-import torchvision.transforms as transforms
-from methods._trainer import _Trainer
-
 
 logger = logging.getLogger()
 

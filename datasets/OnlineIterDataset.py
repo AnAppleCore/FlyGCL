@@ -2,8 +2,10 @@
 # All datasets needs to be in the same format.
 # have targets and classes within the dataset.
 
-from typing import Callable, Optional, Iterable
+from typing import Callable, Iterable, Optional
+
 from torch.utils.data import Dataset
+
 
 class OnlineIterDataset(Dataset):
     def __init__(self,

@@ -1,59 +1,39 @@
+import copy
+import datetime
+import gc
+import logging
+import random
+import time
 from typing import TypeVar
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import timm
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-import logging
-import torch.distributed as dist
-import copy
-
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-from torch import optim
-from torch.utils.data import DataLoader
-from utils.augment import Cutout, Invert, Solarize, select_autoaugment
-from torchvision import transforms
-# from randaugment.randaugment import RandAugment
-
-from methods.er_baseline import ER
-from utils.data_loader import cutmix_data, ImageDataset
-from utils.augment import Cutout, Invert, Solarize, select_autoaugment
-
-import logging
-import copy
-import time
-import datetime
-
-import gc
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torch import optim
-
-from methods._trainer import _Trainer
-
-from utils.data_loader import ImageDataset, StreamDataset, MemoryDataset, cutmix_data, get_statistics
-from utils.train_utils import select_model, select_optimizer, select_scheduler
-from datasets import *
-from utils.onlinesampler import OnlineSampler, OnlineTestSampler
-
-from utils.memory import MemoryBatchSampler, Memory, DummyMemory
-from torch.utils.data import DataLoader
-import timm
+from sklearn.manifold import TSNE
 from timm.models import create_model
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg, default_cfgs
+from torch import optim
+from torch.utils.data import DataLoader
+from torchvision import transforms
+
+from datasets import *
+from methods._trainer import _Trainer
+from methods.er_baseline import ER
 from models.vit import _create_vision_transformer
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-import random
+from utils.augment import Cutout, Invert, Solarize, select_autoaugment
+from utils.data_loader import (ImageDataset, MemoryDataset, StreamDataset,
+                               cutmix_data, get_statistics)
+from utils.memory import DummyMemory, Memory, MemoryBatchSampler
+from utils.onlinesampler import OnlineSampler, OnlineTestSampler
+from utils.train_utils import select_model, select_optimizer, select_scheduler
 
-
+# from randaugment.randaugment import RandAugment
 
 logger = logging.getLogger()
 

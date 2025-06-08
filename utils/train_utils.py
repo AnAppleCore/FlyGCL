@@ -1,18 +1,20 @@
 # import torch_optimizer
 # from easydict import EasyDict as edict
-from torch import optim
-import torch.nn as nn
 import timm
-from timm.models.registry import register_model
-from timm.models.vision_transformer import _cfg, _create_vision_transformer, default_cfgs
+import torch.nn as nn
 from timm.models import create_model
-from models.vit import _create_vision_transformer
-from models.L2P import L2P
-from models.dualprompt import DualPrompt
+from timm.models.registry import register_model
+from timm.models.vision_transformer import (_cfg, _create_vision_transformer,
+                                            default_cfgs)
+from torch import optim
+
 from models.codaprompt import CodaPrompt
+from models.dualprompt import DualPrompt
+from models.L2P import L2P
 from models.mvp import MVP
-from optim.sam import SAM
+from models.vit import _create_vision_transformer
 from optim.fam import FAM
+from optim.sam import SAM
 
 default_cfgs['vit_base_patch16_224'] = _cfg(
         url='https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz',
@@ -232,12 +234,6 @@ def select_model(model_name, dataset, num_classes=None,selection_size=None, kwar
                 p.requires_grad = True    
             else:
                 p.requires_grad = False
-        # model = timm.create_model('resnet34', num_classes=num_classes,pretrained=True)
-        # for n, p in model.named_parameters():
-        #     if "fc." in n:
-        #         p.requires_grad = True    
-        #     else:
-        #         p.requires_grad = False
     else:
         raise NotImplementedError(
             "Please select the appropriate model"

@@ -1,18 +1,19 @@
-import logging
 import copy
+import logging
 
 import pandas as pd
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
-from utils.augment import Cutout, Invert, Solarize, select_autoaugment
 from torchvision import transforms
-# from randaugment.randaugment import RandAugment
 
 from methods.er_baseline import ER
-from utils.data_loader import ImageDataset
 from utils.augment import Cutout, Invert, Solarize, select_autoaugment
+from utils.data_loader import ImageDataset
 from utils.memory import MemoryBatchSampler, MemoryOrderedSampler
+
+# from randaugment.randaugment import RandAugment
+
 logger = logging.getLogger()
 
 

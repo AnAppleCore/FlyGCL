@@ -1,4 +1,4 @@
-name: misa
+name: flygcl
 channels:
   - pytorch
   - nvidia
