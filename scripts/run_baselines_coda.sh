@@ -62,7 +62,7 @@ run_experiment() {
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
     
-    local NOTE="${METHOD}_${POSTFIX}"
+    local NOTE="${METHOD}${POSTFIX}"
 
     mkdir -p "./results/logs/${DATASET}/${NOTE}"
     

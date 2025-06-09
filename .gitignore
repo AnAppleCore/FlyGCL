@@ -170,3 +170,6 @@ results
 *.ipynb
 *.pdf
 *.csv
+
+/*.sh
+
