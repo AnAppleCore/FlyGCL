@@ -163,8 +163,10 @@ cython_debug/
 .vscode/
 data/
 logs/
+materials/
 results/
 
+materials
 results
 
 *.ipynb
