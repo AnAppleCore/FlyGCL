@@ -84,6 +84,7 @@ run_experiment() {
         --note $NOTE \
         --eval_period $EVAL_PERIOD \
         --n_worker $N_WORKER \
+        --selection_size 5 \
         --transforms autoaug \
         --rnd_NM \
         $GPU_TRANSFORM \
@@ -93,20 +94,18 @@ run_experiment() {
 }
 
 echo "========================================="
-echo "Starting Baseline Experiments"
+echo "Starting FlyPrompt Baseline Experiments"
 echo "Dataset: $DATASET"
 echo "Seeds: $SEEDS"
 echo "Si-Blurry Setting: m=$N%, n=$M%"
 echo "Tasks: $N_TASKS"
+echo "Selection Size: 5 (FlyPrompt default)"
 echo "========================================="
 
-# Simple Methods
-echo "Running Simple Methods..."
-
-# FlyPrompt (based on L2P implementation)
+# FlyPrompt (based on L2P implementation with selection_size=5)
 run_experiment "FlyPrompt" "FlyPrompt" "adam" 0.005 0 3 ""
 
 echo "========================================="
-echo "All baseline experiments completed!"
+echo "FlyPrompt baseline experiments completed!"
 echo "Results saved in results/ directory"
 echo "=========================================" 

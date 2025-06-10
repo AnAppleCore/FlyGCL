@@ -59,6 +59,7 @@ run_experiment() {
     local MEMORY_SIZE=$5
     local ONLINE_ITER=$6
     local EXTRA_ARGS=$7
+    local SELECTION_SIZE=$8
     
     local NOTE="${METHOD}_${DATASET}_baseline_standard"
 
@@ -82,6 +83,7 @@ run_experiment() {
         --note $NOTE \
         --eval_period $EVAL_PERIOD \
         --n_worker $N_WORKER \
+        --selection_size $SELECTION_SIZE \
         --transforms autoaug \
         --rnd_NM \
         $GPU_TRANSFORM \
@@ -101,35 +103,35 @@ echo "========================================="
 # Simple Methods
 echo "Running Simple Methods..."
 
-# Seq FT (Sequential Fine-tuning)
-run_experiment "Finetuning" "vit_finetune" "sgd" 0.005 0 3 "--init_model --init_opt"
+# Seq FT (Sequential Fine-tuning) - no selection_size needed
+run_experiment "Finetuning" "vit_finetune" "sgd" 0.005 0 3 "--init_model --init_opt" 1
 
 # Seq FT (SL) - Sequential Fine-tuning with low backbone learning rate
 # Note: This would require separate implementation for different learning rates
 
-# Linear Probe - Backbone frozen, only train output layer
-run_experiment "Finetuning" "vit_finetune_last" "adam" 0.005 0 3 "--fix_bcb"
+# Linear Probe - Backbone frozen, only train output layer - no selection_size needed
+run_experiment "Finetuning" "vit_finetune_last" "adam" 0.005 0 3 "--fix_bcb" 1
 
 # PTMs-based Continual Learning Methods
 echo "Running PTMs-based CL Methods..."
 
-# CODA-P (using prefix tuning)
-run_experiment "CodaPrompt" "CodaPrompt" "adam" 0.005 0 3 ""
+# CODA-P (uses prefix tuning) - selection_size = 1
+run_experiment "CodaPrompt" "CodaPrompt" "adam" 0.005 0 3 "" 1
 
-# L2P (Already uses prompt tuning, not prefix - this is correct as per analysis)
-run_experiment "L2P" "L2P" "adam" 0.005 0 3 ""
+# L2P (uses prompt tuning) - selection_size = 5
+run_experiment "L2P" "L2P" "adam" 0.005 0 3 "" 5
 
-# FlyPrompt (based on L2P implementation)
-run_experiment "FlyPrompt" "FlyPrompt" "adam" 0.005 0 3 ""
+# FlyPrompt (based on L2P implementation) - selection_size = 5
+run_experiment "FlyPrompt" "FlyPrompt" "adam" 0.005 0 3 "" 5
 
-# DualPrompt (uses prefix tuning)
-run_experiment "DualPrompt" "DualPrompt" "adam" 0.005 0 3 ""
+# DualPrompt (uses prefix tuning) - selection_size = 1
+run_experiment "DualPrompt" "DualPrompt" "adam" 0.005 0 3 "" 1
 
 # PTMs-based Generalized Continual Learning Methods  
 echo "Running PTMs-based GCL Methods..."
 
-# MVP (with contrastive loss + logit masking)
-run_experiment "mvp" "mvp" "adam" 0.005 0 3 "--use_mask --use_contrastiv --use_afs --use_mcr"
+# MVP (with contrastive loss + logit masking) - selection_size = 1
+run_experiment "mvp" "mvp" "adam" 0.005 0 3 "--use_mask --use_contrastiv --use_afs --use_mcr" 1
 
 # Note: MISA implementation not found in current codebase
 

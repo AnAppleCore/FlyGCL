@@ -127,9 +127,9 @@ class Prompt(nn.Module):
 
 class L2P(nn.Module):
     def __init__(self,
-                 pool_size      : int   = 10,
+                 pool_size      : int   = 30,
                  selection_size : int   = 5,
-                 prompt_len     : int   = 10,
+                 prompt_len     : int   = 5,
                  class_num      : int   = 100,
                  backbone_name  : str   = None,
                  lambd          : float = 0.5,
@@ -211,6 +211,24 @@ class L2P(nn.Module):
             print('loading from: {}'.format(g_load_path))
             pt_gpt = torch.load(g_load_path)
             # self.prompt.load(pt_gpt.prompts)
+
+        # print all the network hyperparameters and module size:
+        print(f"pool_size: {pool_size}")
+        print(f"selection_size: {selection_size}")
+        print(f"prompt_len: {prompt_len}")
+        print(f"class_num: {class_num}")
+        print(f"backbone_name: {backbone_name}")
+        print(f"lambd: {lambd}")
+
+        print(f"Total number of parameters: {sum(p.numel() for p in self.parameters())}")
+        print(f"Total number of trainable parameters: {sum(p.numel() for p in self.parameters() if p.requires_grad)}")
+        print(f"Total number of non-trainable parameters: {sum(p.numel() for p in self.parameters() if not p.requires_grad)}")
+        print(f"Total number of parameters in the backbone: {sum(p.numel() for p in self.backbone.parameters())}")
+        print(f"Total number of trainable parameters in the backbone: {sum(p.numel() for p in self.backbone.parameters() if p.requires_grad)}")
+        print(f"Total number of non-trainable parameters in the backbone: {sum(p.numel() for p in self.backbone.parameters() if not p.requires_grad)}")
+        print(f"Total number of parameters in the prompt: {sum(p.numel() for p in self.prompt.parameters())}")
+        print(f"Total number of trainable parameters in the prompt: {sum(p.numel() for p in self.prompt.parameters() if p.requires_grad)}")
+        print(f"Total number of non-trainable parameters in the prompt: {sum(p.numel() for p in self.prompt.parameters() if not p.requires_grad)}")
 
     def forward(self, inputs : torch.Tensor, **kwargs) -> torch.Tensor:
         self.backbone.eval()

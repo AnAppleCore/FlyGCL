@@ -186,6 +186,13 @@ def base_parser():
 
     parser.add_argument('--profile', action='store_true', help='enable profiling for ViT_Prompt')
 
+    # LSH-based FlyPrompt parameters
+    parser.add_argument('--expansion_dim', type=int, default=4096, help='dimension for LSH expansion projection')
+    parser.add_argument('--keep_ratio', type=float, default=0.05, help='sparsity ratio for winner-take-all (e.g., 0.05 = 5%)')
+    parser.add_argument('--winner_type', type=str, default='topk', choices=['topk', 'threshold'], help='winner-take-all strategy')
+    parser.add_argument('--return_binary', type=str, default='True', choices=['True', 'False'], help='return binary or float sparse codes')
+    parser.add_argument('--hash_type', type=str, default='chunked', choices=['chunked', 'overlapping'], help='hash function type for LSH')
+
     # parser.add_argument('--beta', type=float, default=0., help='# candidates to use for peeking into the updated head')
     # parser.add_argument('--charlie', type=float, default=0., help='# candidates to use for CP hyperparameter')
     

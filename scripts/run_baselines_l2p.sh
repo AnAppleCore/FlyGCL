@@ -84,6 +84,7 @@ run_experiment() {
         --note $NOTE \
         --eval_period $EVAL_PERIOD \
         --n_worker $N_WORKER \
+        --selection_size 5 \
         --transforms autoaug \
         --rnd_NM \
         $GPU_TRANSFORM \
@@ -93,20 +94,17 @@ run_experiment() {
 }
 
 echo "========================================="
-echo "Starting Baseline Experiments"
+echo "Starting L2P Baseline Experiments"
 echo "Dataset: $DATASET"
 echo "Seeds: $SEEDS"
 echo "Si-Blurry Setting: m=$N%, n=$M%"
 echo "Tasks: $N_TASKS"
 echo "========================================="
 
-# Simple Methods
-echo "Running Simple Methods..."
-
-# L2P (Already uses prompt tuning, not prefix - this is correct as per analysis)
+# L2P (uses prompt tuning with selection_size=5)
 run_experiment "L2P" "L2P" "adam" 0.005 0 3 ""
 
 echo "========================================="
-echo "All baseline experiments completed!"
+echo "L2P baseline experiments completed!"
 echo "Results saved in results/ directory"
 echo "=========================================" 
