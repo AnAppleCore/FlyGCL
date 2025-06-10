@@ -64,6 +64,11 @@ class FlyPromptLSH(_Trainer):
             _loss += loss
             _acc += acc
             _iter += 1
+            
+        # Bio-plausible update for part B (after task 1)
+        if hasattr(self.model_without_ddp, 'update_part_B'):
+            self.model_without_ddp.update_part_B()
+            
         if self.memory_size > 0:
             self.update_memory(idx, labels)
         del(images, labels)
@@ -184,6 +189,23 @@ class FlyPromptLSH(_Trainer):
         pass
 
     def online_after_task(self, cur_iter):
+        # Bio-plausible updates for tripartite prompt pool
+        if cur_iter == 0:
+            # Initialize parts B and C from A after first task
+            if hasattr(self.model_without_ddp, 'initialize_parts_after_first_task'):
+                initialized = self.model_without_ddp.initialize_parts_after_first_task()
+                if initialized:
+                    print(f"Initialized tripartite prompt pool after first task")
+        
+        # Update part C from B after each task (if initialized)
+        if hasattr(self.model_without_ddp, 'update_part_C'):
+            self.model_without_ddp.update_part_C()
+            print(f"Updated part C after task {cur_iter}")
+        
+        # Increment task count after each task
+        if hasattr(self.model_without_ddp, 'increment_task_count'):
+            self.model_without_ddp.increment_task_count()
+        
         # Store LSH usage statistics for analysis
         if hasattr(self.model_without_ddp, 'get_lsh_stats'):
             lsh_stats = self.model_without_ddp.get_lsh_stats()
@@ -191,6 +213,11 @@ class FlyPromptLSH(_Trainer):
             print(f"  Usage distribution: {lsh_stats['usage_counter']}")
             print(f"  Expansion dim: {lsh_stats['expansion_dim']}")
             print(f"  Keep ratio: {lsh_stats['keep_ratio']}")
+            if 'bio_plausible' in lsh_stats and lsh_stats['bio_plausible']:
+                print(f"  Bio-plausible: {lsh_stats['bio_plausible']}")
+                print(f"  Projection type: {lsh_stats['projection_type']}")
+                print(f"  Connectivity: {lsh_stats['connectivity']}")
+                print(f"  Task count: {lsh_stats['task_count']}")
         pass
 
     def reset_opt(self):

@@ -193,6 +193,13 @@ def base_parser():
     parser.add_argument('--return_binary', type=str, default='True', choices=['True', 'False'], help='return binary or float sparse codes')
     parser.add_argument('--hash_type', type=str, default='chunked', choices=['chunked', 'overlapping'], help='hash function type for LSH')
 
+    # Bio-plausible FlyPrompt parameters
+    parser.add_argument('--bio_plausible', action='store_true', help='enable bio-plausible FlyPrompt')
+    parser.add_argument('--projection_type', type=str, default='sparse_binary', choices=['sparse_binary', 'dense_gaussian'], help='projection type for LSH')
+    parser.add_argument('--connectivity', type=int, default=6, help='connectivity for sparse binary projection')
+    parser.add_argument('--ema_alpha', type=float, default=0.05, help='ema_alpha for EMA')
+    parser.add_argument('--ema_beta', type=float, default=0.1, help='ema_beta for EMA')
+
     # parser.add_argument('--beta', type=float, default=0., help='# candidates to use for peeking into the updated head')
     # parser.add_argument('--charlie', type=float, default=0., help='# candidates to use for CP hyperparameter')
     
