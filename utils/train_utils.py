@@ -1,36 +1,12 @@
 # import torch_optimizer
 # from easydict import EasyDict as edict
 import timm
-import torch.nn as nn
-from timm.models import create_model
-from timm.models.registry import register_model
-from timm.models.vision_transformer import (_cfg, _create_vision_transformer,
-                                            default_cfgs)
 from torch import optim
 
-from models.codaprompt import CodaPrompt
-from models.dualprompt import DualPrompt
-from models.FlyPrompt import FlyPrompt
-from models.FlyPrompt_LSH import FlyPromptLSH
-from models.L2P import L2P
-from models.mvp import MVP
-from models.vit import _create_vision_transformer
+from models import MODELS
 from optim.fam import FAM
 from optim.sam import SAM
 
-default_cfgs['vit_base_patch16_224'] = _cfg(
-        url='https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz',
-        num_classes=21843)
-@register_model
-def vit_base_patch16_224(pretrained=False, **kwargs):
-    """ ViT-Base model (ViT-B/32) from original paper (https://arxiv.org/abs/2010.11929).
-    ImageNet-21k weights @ 224x224, source https://github.com/google-research/vision_transformer.
-    NOTE: this model has valid 21k classifier head and no representation (pre-logits) layer
-    """
-    model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs)
-    model = _create_vision_transformer('vit_base_patch16_224', pretrained=pretrained, **model_kwargs)
-    return model
 
 def cycle(iterable):
     # iterate with shuffling
@@ -41,7 +17,6 @@ def cycle(iterable):
 def select_optimizer(opt_name, lr, model):
 
     if opt_name == "adam":
-        # print("opt_name: adam")
         opt = optim.Adam(model.parameters(), lr=lr, weight_decay=0)
     elif opt_name == 'adam_adapt':
         fc_params = []
@@ -61,9 +36,6 @@ def select_optimizer(opt_name, lr, model):
                         {'params': fc_params, 'lr': lr},       # Learning rate lr1 for fully-connected layers
                         {'params': other_params, 'lr': lr*5}     # Learning rate lr2 for all other layers
                     ], weight_decay=0)
-        
-    # elif opt_name == "radam":
-    #     opt = torch_optimizer.RAdam(model.parameters(), lr=lr, weight_decay=0.00001)
     elif opt_name == "sgd":
         opt = optim.SGD(
             model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=1e-4
@@ -115,139 +87,27 @@ def select_scheduler(sched_name, opt, hparam=None):
         scheduler = optim.lr_scheduler.LambdaLR(opt, lambda iter: 1)
     return scheduler
 
-def select_model(model_name, dataset, num_classes=None,selection_size=None, kwargs=None):
-    
-    opt = dict(
-        {
-            "depth": 18,
-            "num_classes": num_classes,
-            "in_channels": 3,
-            "bn": True,
-            "normtype": "BatchNorm",
-            "activetype": "ReLU",
-            "pooltype": "MaxPool2d",
-            "preact": False,
-            "affine_bn": True,
-            "bn_eps": 1e-6,
-            "compression": 0.5,
-        }
-    )
+def select_model(method, backbone, num_classes=None, n_tasks=None, kwargs=None):
 
-#! cifar and imageNet --> ViT model 
-    model_class = None
-
-    #* vit method(L2p) --> cifar_vit,vision_transformer
-
-    if model_name == "resnet18":
-        opt["depth"] = 18
-    elif model_name == "resnet32":
-        opt["depth"] = 32
-    elif model_name == "resnet34":
-        opt["depth"] = 34
-    elif model_name == "mlp400":
-        opt["width"] = 400
-    elif model_name == "vit":
-        opt["depth"] = 12
-    elif model_name == "vit_finetune":
-        opt["depth"] = 12
-    elif model_name == "vit_finetune_last":
-        opt["depth"] = 12
-    elif model_name == "vit_init_last":
-        opt["depth"] = 12
-    elif model_name == "L2P":
-        opt["depth"] = 12
-    elif model_name == "FlyPrompt":
-        opt["depth"] = 12
-    elif model_name == "FlyPromptLSH":
-        opt["depth"] = 12
-    elif model_name == "DualPrompt":
-        opt["depth"] = 12
-    elif model_name == "CodaPrompt":
-        opt["depth"] = 12
-    elif model_name == "mvp":
-        opt["depth"] = 12
-    elif model_name == "slca":
-        opt["depth"] = 12
-    else:
-        raise NotImplementedError(
-            "Please choose the model name in [resnet18, resnet32, resnet34]"
+    if method=="slca":
+        import models.vit as vit
+        model = timm.create_model(
+            backbone,
+            pretrained=True,
+            num_classes=num_classes,
+            drop_rate=0.,
+            drop_path_rate=0.,
+            drop_block_rate=None
         )
-
-    if model_name == "vit":
-        model = timm.create_model(
-                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes, # vit_small_patch16_224
-                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None)
-        for n, p in model.named_parameters():
-            if "fc." in n:
-                p.requires_grad = True
-            else:
-                p.requires_grad = False
-    elif model_name == "vit_finetune_last":
-        model = timm.create_model(
-                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
-                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,)
-        for n, p in model.named_parameters():
-            if "fc." in n or 'blocks.11' in n or 'blocks.10' in n:
-                p.requires_grad = True
-            else:
-                p.requires_grad = False
-
-    elif model_name == "vit_init_last":
-        model = timm.create_model(
-                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
-                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,)
-        for n, p in model.named_parameters():
-            if "fc." in n:
-                p.requires_grad = True
-                
-            elif 'blocks.11' in n or 'blocks.10' in n: #blocks.11.mlp
-                p.requires_grad = True
-                # nn.init.uniform_(p)
-                nn.init.normal_(p, mean=0, std=1)
-                
-            else:
-                p.requires_grad = False
-
-    elif model_name == "vit_finetune":
-        model = timm.create_model(
-                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
-                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,) 
-    elif model_name == "slca":
-        model = timm.create_model(
-                            "vit_base_patch16_224",pretrained=True,num_classes=num_classes,
-                            drop_rate=0.,drop_path_rate=0.,drop_block_rate=None,) 
-    elif model_name == "CodaPrompt":
-        model = CodaPrompt(backbone_name="vit_base_patch16_224", pretrained=True, class_num=num_classes, **kwargs)
-    elif model_name == "L2P":
-        model = L2P(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
-    elif model_name == "FlyPrompt":
-        model = FlyPrompt(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
-    elif model_name == "FlyPromptLSH":
-        model = FlyPromptLSH(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
-    elif model_name == "DualPrompt":
-        model = DualPrompt(backbone_name="vit_base_patch16_224", class_num=num_classes, **kwargs)
-    elif model_name == "mvp":
-        model = MVP(backbone_name="vit_base_patch16_224", class_num=num_classes, selection_size = selection_size)
-    elif model_name == "resnet18":
-        model = timm.create_model('resnet18', num_classes=num_classes,pretrained=True)
-        for n, p in model.named_parameters():
-            if "fc." in n:
-                p.requires_grad = True    
-            else:
-                p.requires_grad = False
-    elif model_name == "resnet34":
-        import torchvision.models as models
-        model = models.resnet34(pretrained=True)
-        model.fc = nn.Linear(512, num_classes)
-        for n, p in model.named_parameters():
-            if "fc." in n:
-                p.requires_grad = True    
-            else:
-                p.requires_grad = False
-    else:
-        raise NotImplementedError(
-            "Please select the appropriate model"
+    elif method in MODELS.keys():
+        model = MODELS[method](
+            backbone_name=backbone,
+            pretrained=True,
+            num_classes=num_classes,
+            task_num=n_tasks,
+            **kwargs
         )
+    else:
+        raise NotImplementedError(f"Unsupported method: {method}")
 
-    print("[Selected Model]:", model_name )
     return model

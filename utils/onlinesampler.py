@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Sized
 
 import torch
@@ -5,6 +6,7 @@ import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import Sampler
 
+logger = logging.getLogger()
 
 class OnlineSampler(DistributedSampler):
     def __init__(self, data_source: Optional[Sized], num_tasks, m, n, rnd_seed, cur_iter = 0, varing_NM = False, num_replicas=None, rank=None) -> None:
@@ -23,7 +25,7 @@ class OnlineSampler(DistributedSampler):
             if not dist.is_available():
                 raise RuntimeError("Distibuted package is not available, but you are trying to use it.")
             num_replicas = dist.get_world_size()
-            print('num_replicas: {}'.format(num_replicas))
+            logger.info(f'num_replicas: {num_replicas}')
         if rank is not None:
             if not dist.is_available():
                 raise RuntimeError("Distibuted package is not available, but you are trying to use it.")
@@ -47,8 +49,8 @@ class OnlineSampler(DistributedSampler):
             self.blurry_classes     = class_order[self.disjoint_num:self.disjoint_num + self.blurry_num]
             self.blurry_classes     = self.blurry_classes.reshape(num_tasks, -1).tolist()
 
-            print("disjoint classes {}: ".format(self.disjoint_num ), self.disjoint_classes)
-            print("blurry classes {}: ".format(self.blurry_num ), self.blurry_classes)
+            logger.info(f"disjoint classes {self.disjoint_num}: {self.disjoint_classes}")
+            logger.info(f"blurry classes {self.blurry_num}: {self.blurry_classes}")
             # Get indices of disjoint and blurry classes
             self.disjoint_indices   = [[] for _ in range(num_tasks)]
             self.blurry_indices     = [[] for _ in range(num_tasks)]
@@ -68,7 +70,7 @@ class OnlineSampler(DistributedSampler):
                 self.blurry_indices[i] = self.blurry_indices[i][len(self.blurry_indices[i]) * m // 100:]
             blurred = torch.tensor(blurred)
             blurred = blurred[torch.randperm(len(blurred), generator=self.generator)].tolist()
-            print("blurry indices: ", len(blurred))
+            logger.info(f"blurry indices: {len(blurred)}")
             num_blurred = len(blurred) // num_tasks
             for i in range(num_tasks):
                 self.blurry_indices[i] += blurred[:num_blurred]
@@ -76,7 +78,7 @@ class OnlineSampler(DistributedSampler):
             
             self.indices = [[] for _ in range(num_tasks)]
             for i in range(num_tasks):
-                print("task %d: disjoint %d, blurry %d" % (i, len(self.disjoint_indices[i]), len(self.blurry_indices[i])))
+                logger.info(f"task {i}: disjoint {len(self.disjoint_indices[i])}, blurry {len(self.blurry_indices[i])}")
                 self.indices[i] = self.disjoint_indices[i] + self.blurry_indices[i]
                 self.indices[i] = torch.tensor(self.indices[i])[torch.randperm(len(self.indices[i]), generator=self.generator)].tolist()
         else:
@@ -105,8 +107,8 @@ class OnlineSampler(DistributedSampler):
             # self.blurry_classes     = class_order[self.disjoint_num:self.disjoint_num + self.blurry_num]
             # self.blurry_classes     = self.blurry_classes.reshape(num_tasks, -1).tolist()
 
-            print("disjoint classes: ", self.disjoint_classes)
-            print("blurry classes: ", self.blurry_classes)
+            logger.info(f"disjoint classes: {self.disjoint_classes}")
+            logger.info(f"blurry classes: {self.blurry_classes}")
             
             # Get indices of disjoint and blurry classes
             self.disjoint_indices   = [[] for _ in range(num_tasks)]
@@ -154,7 +156,7 @@ class OnlineSampler(DistributedSampler):
                     self.blurry_indices[i] = self.blurry_indices[i][num_blurred[i + 1] - num_blurred[i]:]
                 blurred = torch.tensor(blurred)
                 blurred = blurred[torch.randperm(len(blurred), generator=self.generator)].tolist()
-                print("blurry indices: ", len(blurred))
+                logger.info(f"blurry indices: {len(blurred)}")
                 # num_blurred = len(blurred) // num_tasks
                 for i in range(num_tasks):
                     self.blurry_indices[i] += blurred[:num_blurred[i + 1] - num_blurred[i]]
@@ -162,8 +164,7 @@ class OnlineSampler(DistributedSampler):
             
             self.indices = [[] for _ in range(num_tasks)]
             for i in range(num_tasks):
-                print("task %d: disjoint %d, blurry %d" % (i, len(self.disjoint_indices[i]), len(self.blurry_indices[i])))
-                # print(self.blurry_indices[i])
+                logger.info(f"task {i}: disjoint {len(self.disjoint_indices[i])}, blurry {len(self.blurry_indices[i])}")
                 self.indices[i] = self.disjoint_indices[i] + self.blurry_indices[i]
                 self.indices[i] = torch.tensor(self.indices[i])[torch.randperm(len(self.indices[i]), generator=self.generator)].tolist()
 
@@ -250,8 +251,8 @@ class OnlineBatchSampler(Sampler):
             self.blurry_classes     = class_order[self.disjoint_num:self.disjoint_num + self.blurry_num]
             self.blurry_classes     = self.blurry_classes.reshape(num_tasks, -1).tolist()
 
-            print("disjoint classes: ", self.disjoint_classes)
-            print("blurry classes: ", self.blurry_classes)
+            logger.info(f"disjoint classes: {self.disjoint_classes}")
+            logger.info(f"blurry classes: {self.blurry_classes}")
             # Get indices of disjoint and blurry classes
             self.disjoint_indices   = [[] for _ in range(num_tasks)]
             self.blurry_indices     = [[] for _ in range(num_tasks)]
@@ -271,7 +272,7 @@ class OnlineBatchSampler(Sampler):
                 self.blurry_indices[i] = self.blurry_indices[i][len(self.blurry_indices[i]) * m // 100:]
             blurred = torch.tensor(blurred)
             blurred = blurred[torch.randperm(len(blurred), generator=self.generator)].tolist()
-            print("blurry indices: ", len(blurred))
+            logger.info(f"blurry indices: {len(blurred)}")
             num_blurred = len(blurred) // num_tasks
             for i in range(num_tasks):
                 self.blurry_indices[i] += blurred[:num_blurred]
@@ -279,7 +280,7 @@ class OnlineBatchSampler(Sampler):
             
             self.indices = [[] for _ in range(num_tasks)]
             for i in range(num_tasks):
-                print("task %d: disjoint %d, blurry %d" % (i, len(self.disjoint_indices[i]), len(self.blurry_indices[i])))
+                logger.info(f"task {i}: disjoint {len(self.disjoint_indices[i])}, blurry {len(self.blurry_indices[i])}")
                 self.indices[i] = self.disjoint_indices[i] + self.blurry_indices[i]
                 self.indices[i] = torch.tensor(self.indices[i])[torch.randperm(len(self.indices[i]), generator=self.generator)]
                 num_batches     = int(self.indices[i].size(0) // self.batchsize)
@@ -298,8 +299,8 @@ class OnlineBatchSampler(Sampler):
             self.blurry_classes     = class_order[self.disjoint_num:self.disjoint_num + self.blurry_num]
             self.blurry_classes     = self.blurry_classes.reshape(num_tasks, -1).tolist()
 
-            print("disjoint classes: ", self.disjoint_classes)
-            print("blurry classes: ", self.blurry_classes)
+            logger.info(f"disjoint classes: {self.disjoint_classes}")
+            logger.info(f"blurry classes: {self.blurry_classes}")
             
             # Get indices of disjoint and blurry classes
             self.disjoint_indices   = [[] for _ in range(num_tasks)]
@@ -325,7 +326,7 @@ class OnlineBatchSampler(Sampler):
                 self.blurry_indices[i] = self.blurry_indices[i][num_blurred[i + 1] - num_blurred[i]:]
             blurred = torch.tensor(blurred)
             blurred = blurred[torch.randperm(len(blurred), generator=self.generator)].tolist()
-            print("blurry indices: ", len(blurred))
+            logger.info(f"blurry indices: {len(blurred)}")
             # num_blurred = len(blurred) // num_tasks
             for i in range(num_tasks):
                 self.blurry_indices[i] += blurred[:num_blurred[i + 1] - num_blurred[i]]
@@ -333,7 +334,7 @@ class OnlineBatchSampler(Sampler):
             
             self.indices = [[] for _ in range(num_tasks)]
             for i in range(num_tasks):
-                print("task %d: disjoint %d, blurry %d" % (i, len(self.disjoint_indices[i]), len(self.blurry_indices[i])))
+                logger.info(f"task {i}: disjoint {len(self.disjoint_indices[i])}, blurry {len(self.blurry_indices[i])}")
                 self.indices[i] = self.disjoint_indices[i] + self.blurry_indices[i]
                 self.indices[i] = torch.tensor(self.indices[i])[torch.randperm(len(self.indices[i]), generator=self.generator)].tolist()
                 num_batches     = int(self.indices[i].size(0) // self.batchsize)

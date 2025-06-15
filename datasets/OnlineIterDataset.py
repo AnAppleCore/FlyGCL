@@ -2,8 +2,6 @@
 # All datasets needs to be in the same format.
 # have targets and classes within the dataset.
 
-from typing import Callable, Iterable, Optional
-
 from torch.utils.data import Dataset
 
 

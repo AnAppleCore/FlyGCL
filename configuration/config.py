@@ -1,214 +1,48 @@
 import argparse
 
+from datasets import DATASETS
+from methods import METHODS
+
 
 def base_parser():
     parser = argparse.ArgumentParser(description="Class Incremental Learning Research")
 
-    # Mode and Exp. Settings.
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="er",
-        help="Select CIL method",
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default="cifar10",
-        help="[mnist, cifar10, cifar100, imagenet]",
-    )
+    # ========== Experiment configuration ==========
+    parser.add_argument("--seeds", type=int, nargs="+", default=[1])
+    parser.add_argument("--note", type=str, default="", help="Short description of the exp")
+    parser.add_argument("--log_path",type=str,default="results",help="The path logs are saved.",)
+
+    # ============ Model configuration =============
+    parser.add_argument("--method", type=str, default="l2p", help="Method name", choices=METHODS.keys())
+    parser.add_argument("--backbone", type=str, default="vit_base_patch16_224", help="Backbone name")
+
+    # =========== Dataset configuration ============
+    parser.add_argument("--dataset", type=str, default="cifar10", help="dataset name", choices=DATASETS.keys())
+    parser.add_argument("--data_dir", type=str, default="/data/datasets/", help="location of the dataset")
     parser.add_argument("--n_tasks", type=int, default=5, help="The number of tasks")
     parser.add_argument("--n", type=int, default=50, help="The percentage of disjoint split. Disjoint=100, Blurry=0")
     parser.add_argument("--m", type=int, default=10, help="The percentage of blurry samples in blurry split. Uniform split=100, Disjoint=0")
     parser.add_argument("--rnd_NM", action='store_true', default=False, help="if True, N and M are randomly mixed over tasks.")
-    parser.add_argument("--rnd_seed", type=int, help="Random seed number.")
-    parser.add_argument(
-        "--memory_size", type=int, default=500, help="Episodic memory size"
-    )
-    # Dataset
-    parser.add_argument(
-        "--log_path",
-        type=str,
-        default="results",
-        help="The path logs are saved.",
-    )
-    # Model
-    parser.add_argument(
-        "--model_name", type=str, default="resnet18", help="Model name"
-    )
 
-    # meta
-    parser.add_argument("--meta_path", type=str, default=None,
-         help="Path of pre-trained model")
-
-    parser.add_argument("--cor_path", type=str, default=None,
-         help="Path of corvariance matrix")
-    parser.add_argument("--update_cor", action="store_true", default=False,
-         help="update_cor")
-    parser.add_argument("--pretrain_cor", action="store_true", default=False,
-         help="using pre-trained corvariance matrix")
-    parser.add_argument("--cor_coef", type=float, default=1.0,
-         help="Coefficient of corvariance matrix")
-
-
-
-    parser.add_argument("--linear_path", type=str, default=None,
-         help="Path of linear_transform")  
-    parser.add_argument("--update_linear", action="store_true", default=False,
-         help="update_transform")
-    parser.add_argument("--pretrain_linear", action="store_true", default=False,
-         help="using pre-trained linear_transform")
-
-    parser.add_argument("--p_path", type=str, default=None,
-         help="Path of pre-trained prompt")
-    parser.add_argument("--only_test", action="store_true", default=False,
-         help="update_transform")
-    parser.add_argument("--fix_bcb", action="store_true", default=False,
-         help="update_transform")
-
-    parser.add_argument("--ranpac", action="store_true", default=False,
-         help="update_transform")
-    parser.add_argument("--ranpac_coef", type=float, default=0.5,
-         help="Coefficient of corvariance matrix")
-
-
-   
-
-    # My changes: 
-    parser.add_argument("--num_epochs", type=int, default=1, help="number of epoch.")
-    parser.add_argument("--load_pt", action="store_true", default=False)
-    parser.add_argument("--nobatchmask", action="store_true", default=False) # If false, use seen mask
-    parser.add_argument("--sessionmask", action="store_true", default=False)
-    parser.add_argument("--learnable_mask", action="store_true", default=False)
-    parser.add_argument("--imbalance", action="store_true", default=False)
-    parser.add_argument("--loadweakvit", action="store_true", default=False)
-    parser.add_argument("--isa", action="store_true", default=False)
-    parser.add_argument("--e_proj", action="store_true", default=False)
-    parser.add_argument("--g_proj", action="store_true", default=False)
-    parser.add_argument("--seeds", type=int, nargs="+", default=[1])
-
-
-    # Train
+    # =========== Training configuration ===========
     parser.add_argument("--opt_name", type=str, default="sgd", help="Optimizer name")
     parser.add_argument("--sched_name", type=str, default="default", help="Scheduler name")
-    parser.add_argument("--batchsize", type=int, default=16, help="batch size")
-
+    parser.add_argument("--use_amp", action="store_true", default=False, help="Use automatic mixed precision.")
     parser.add_argument("--n_worker", type=int, default=0, help="The number of workers")
-
+    parser.add_argument("--batchsize", type=int, default=16, help="batch size")
     parser.add_argument("--lr", type=float, default=0.05, help="learning rate")
-    parser.add_argument(
-        "--init_model",
-        action="store_true",
-        help="Initilize model parameters for every iterations",
-    )
-    parser.add_argument(
-        "--init_opt",
-        action="store_true",
-        help="Initilize optimizer states for every iterations",
-    )
-    parser.add_argument(
-        "--topk", type=int, default=1, help="set k when we want to set topk accuracy"
-    )
+    parser.add_argument("--num_epochs", type=int, default=1, help="number of epoch.")
+    parser.add_argument("--online_iter", type=float, default=1, help="number of model updates per samples seen.")
 
-    parser.add_argument(
-        "--use_amp", action="store_true", help="Use automatic mixed precision."
-    )
+    parser.add_argument("--transforms", nargs="*", default=['cutmix', 'autoaug'], help="Additional train transforms [cutmix, cutout, autoaug]")
+    parser.add_argument("--no_batchmask", action="store_true", default=False, help="Disable batch mask, use seen mask")
 
-    # Transforms
-    parser.add_argument(
-        "--transforms",
-        nargs="*",
-        default=['cutmix', 'autoaug'],
-        help="Additional train transforms [cutmix, cutout, randaug]",
-    )
-
-    parser.add_argument("--gpu_transform", action="store_true", help="perform data transform on gpu (for faster AutoAug).")
-
-    # Regularization
-    parser.add_argument(
-        "--reg_coef",
-        type=int,
-        default=100,
-        help="weighting for the regularization loss term",
-    )
-
-    parser.add_argument("--data_dir", type=str, help="location of the dataset")
-
-    # Debug
-    parser.add_argument("--debug", action="store_true", help="Turn on Debug mode")
-    # Note
-    parser.add_argument("--note", type=str, help="Short description of the exp")
-
-    # Eval period
+    # ========== Evaluation configuration ==========
+    parser.add_argument("--topk", type=int, default=1, help="set k when we want to set topk accuracy")
     parser.add_argument("--eval_period", type=int, default=100, help="evaluation period for true online setup")
 
-    parser.add_argument("--temp_batchsize", type=int, help="temporary batch size, for true online")
-    parser.add_argument("--online_iter", type=float, default=1, help="number of model updates per samples seen.")
-    
-   
-
-    # GDumb
-    parser.add_argument('--num_gpus', type=int, default=1, help='number of GPUs, for GDumb eval')
-    parser.add_argument('--workers_per_gpu', type=int, default=1, help='number of workers per GPU, for GDumb eval')
-
-    # CLIB
-    parser.add_argument("--imp_update_period", type=int, default=1,
-                        help="period between importance update, in units of model updates (increase for heavy datasets like ImageNet)")
-    parser.add_argument('--lr_step', type=float, default=0.95, help='step of iterating lr for adaptive LR')
-    parser.add_argument('--lr_length', type=int, default=10, help='period of iterating lr for adaptive LR')
-    parser.add_argument('--lr_period', type=int, default=10, help='period of iterating lr for adaptive LR')
-
-    # RM & GDumb
-    parser.add_argument("--memory_epoch", type=int, default=256, help="number of training epochs after task for Rainbow Memory")
-
-    # BiC
-    parser.add_argument("--distilling", type=bool, default=True, help="use distillation for BiC.")
-
-    # AGEM
-    parser.add_argument('--agem_batch', type=int, default=240, help='A-GEM batch size for calculating gradient')
-
-    # MIR
-    parser.add_argument('--mir_cands', type=int, default=50, help='# candidates to use for MIR')
-
-    # Prompt-based (ViT)
-    parser.add_argument('--use_mask', action='store_true', help='use mask for our method')
-    parser.add_argument('--use_contrastiv', action='store_true', help='use contrastive loss for our method')
-    parser.add_argument('--use_last_layer', action='store_true', help='use last layer for our method')
-    # parser.add_argument('--use_dyna_exp', action='store_true', help='use dynamic expand for our method')
-    
-    parser.add_argument('--use_afs', action='store_true', help='enable Adaptive Feature Scaling (AFS) in MVP')
-    parser.add_argument('--use_mcr', action='store_true', help='enable Minor-Class Reinforcement (MCR) in MVP')
-    
-    parser.add_argument('--selection_size', type=int, default=1, help='# candidates to use for ViT_Prompt')
-    parser.add_argument('--alpha', type=float, default=0.5, help='# candidates to use for STR hyperparameter')
-    parser.add_argument('--gamma', type=float, default=1., help='# candidates to use for STR hyperparameter')
-    parser.add_argument('--margin', type=float, default=0.5, help='# candidates to use for STR hyperparameter')
-
-    parser.add_argument('--profile', action='store_true', help='enable profiling for ViT_Prompt')
-
-    # LSH-based FlyPrompt parameters
-    parser.add_argument('--expansion_dim', type=int, default=4096, help='dimension for LSH expansion projection')
-    parser.add_argument('--keep_ratio', type=float, default=0.05, help='sparsity ratio for winner-take-all (e.g., 0.05 = 5%)')
-    parser.add_argument('--winner_type', type=str, default='topk', choices=['topk', 'threshold'], help='winner-take-all strategy')
-    parser.add_argument('--return_binary', type=str, default='True', choices=['True', 'False'], help='return binary or float sparse codes')
-    parser.add_argument('--hash_type', type=str, default='chunked', choices=['chunked', 'overlapping'], help='hash function type for LSH')
-
-    # Bio-plausible FlyPrompt parameters
-    parser.add_argument('--bio_plausible', action='store_true', help='enable bio-plausible FlyPrompt')
-    parser.add_argument('--projection_type', type=str, default='sparse_binary', choices=['sparse_binary', 'dense_gaussian'], help='projection type for LSH')
-    parser.add_argument('--connectivity', type=int, default=6, help='connectivity for sparse binary projection')
-    parser.add_argument('--ema_alpha', type=float, default=0.05, help='ema_alpha for EMA')
-    parser.add_argument('--ema_beta', type=float, default=0.1, help='ema_beta for EMA')
-
-    # parser.add_argument('--beta', type=float, default=0., help='# candidates to use for peeking into the updated head')
-    # parser.add_argument('--charlie', type=float, default=0., help='# candidates to use for CP hyperparameter')
-    
-
-    # Ours
-    # parser.add_argument('--use_mask', action='store_true', help='use mask for our method')
-    # parser.add_argument('--use_contrastiv', action='store_true', help='use contrastive loss for our method')
-    # parser.add_argument('--use_last_layer', action='store_true', help='use last layer for our method')
-    # parser.add_argument('--use_dyna_exp', action='store_true', help='use dynamic expand for our method')
+    # ============= ViT configurations =============
+    parser.add_argument('--profile', action='store_true', default=False, help='enable profiling for ViT_Prompt')
 
     args = parser.parse_args()
     return args

@@ -37,8 +37,6 @@ from timm.models.layers import (DropPath, Mlp, PatchEmbed, lecun_normal_,
                                 trunc_normal_)
 from timm.models.registry import register_model
 
-# from methods.prompt import Prompt
-
 _logger = logging.getLogger(__name__)
 
 
@@ -712,7 +710,7 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
         pretrained_cfg['custom_load'] = True
     else:
         pretrained_cfg.custom_load = True
-    print(pretrained_cfg)
+    _logger.info(pretrained_cfg)
 
     model = build_model_with_cfg(
         VisionTransformer, variant, pretrained,

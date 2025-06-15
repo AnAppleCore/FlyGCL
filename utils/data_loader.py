@@ -1,17 +1,12 @@
 import logging.config
-import os
-import time
-from time import perf_counter
 from typing import Callable, List, Optional
 
 import numpy as np
 import pandas as pd
-import PIL
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from datasets import *
 
 logger = logging.getLogger()
 
@@ -23,11 +18,7 @@ class ImageDataset(Dataset):
         for x,y in zip(inputs,gt):
             self.images.append(x)
             self.labels.append(y)
-        
-        
-        
-        
-        # self.dataset = dataset
+
         self.transform = transform
         self.cls_list = cls_list
         self.data_dir = data_dir
@@ -318,8 +309,8 @@ def get_statistics(dataset: str):
         "places365",
         'gtsrb',
         'wikiart'
-        
     ]
+
     mean = {
         "mnist": (0.1307,),
         "KMNIST": (0.1307,),
@@ -444,6 +435,7 @@ def get_statistics(dataset: str):
         'gtsrb': 224,
         'wikiart': 224
     }
+
     return (
         mean[dataset],
         std[dataset],

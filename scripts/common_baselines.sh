@@ -1,22 +1,5 @@
 #!/bin/bash
 
-# --------------------------------------------------------------
-# Example Running Command:
-# bash scripts/run_baselines.sh [GPU_ID] [SEEDS] [DATASET] [EXTRA_NOTE]
-# --------------------------------------------------------------
-
-# Standardized Baseline Experiments for Online Si-Blurry Setting
-date
-ulimit -n 65536
-export MASTER_PORT=$(($RANDOM+32769))
-export WORLD_SIZE=1
-
-# GPU Selection (can be manually specified)
-GPU_ID=${1:-0}  # Default to GPU 0 if not specified
-export CUDA_VISIBLE_DEVICES=$GPU_ID
-
-echo "Using GPU: $GPU_ID"
-
 # Common experiment settings
 N=50  # Disjoint Class Ratio (m) = 50%
 M=10  # Blurry Sample Ratio (n) = 10%
@@ -36,8 +19,6 @@ TRANSFORMS="autoaug"
 
 # Dataset configuration
 DATASET=${3:-"cifar100"}  # Default to cifar100, can be cifar100, imagenet-r, cub200
-
-echo "Running experiments on dataset: $DATASET with seeds: $SEEDS"
 
 # Extra note for the experiment
 EXTRA_NOTE=${4:-"baseline_standard"}
@@ -97,32 +78,3 @@ run_experiment() {
         $EXTRA_ARGS \
         | tee "${LOG_PATH}/logs/${DATASET}/${NOTE}/seed_${SEEDS}_log.txt" 2>&1
 }
-
-echo "========================================="
-echo "Starting Baseline Experiments"
-echo "Dataset: $DATASET"
-echo "Seeds: $SEEDS"
-echo "Si-Blurry Setting: m=$N%, n=$M%"
-echo "Tasks: $N_TASKS"
-echo "========================================="
-
-# TODO: Add SLCA
-# Seq FT (SL) - Sequential Fine-tuning with low backbone learning rate
-# run_experiment "slca" "vit_base_patch16_224" "sgd_sl" 0.00005 ""
-
-# CODA-P (uses prefix tuning)
-run_experiment "codaprompt" "vit_base_patch16_224" "adam" 0.005 ""
-
-# L2P (uses prompt tuning)
-run_experiment "l2p" "vit_base_patch16_224" "adam" 0.005 ""
-
-# DualPrompt (uses prefix tuning)
-run_experiment "dualprompt" "vit_base_patch16_224" "adam" 0.005 ""
-
-# MVP (with contrastive loss + logit masking)
-run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 "--no_batchmask"
-
-echo "========================================="
-echo "All experiments completed!"
-echo "Results saved in ${LOG_PATH} directory"
-echo "========================================="

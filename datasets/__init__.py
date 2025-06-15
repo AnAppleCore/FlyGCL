@@ -16,23 +16,24 @@ from .OnlineIterDataset import OnlineIterDataset
 from .TinyImageNet import TinyImageNet
 from .WIKIART import WIKIART
 
-__all__ = [
-    "CUB200",
-    "CARS196",
-    "TinyImageNet",
-    "CIFAR10",
-    "CIFAR100",
-    "ImageNet",
-    "Imagenet_R",
-    "ImageNetSub",
-    "ImageNet100",
-    "ImageNet900",
-    "ImageNetRandom",
-    "OnlineIterDataset",
-    "NCH",
-    "CUB175",
-    "CUBRandom",
-    "Places365",
-    "GTSRB",
-    "WIKIART"
-]
+DATASETS = {
+    "cifar10": CIFAR10,
+    "cifar100": CIFAR100,
+    "tinyimagenet": TinyImageNet,
+    "cub200": CUB200,
+    "cars196": CARS196,
+    "cub175": CUB175,
+    "cubrandom": CUBRandom,
+    "imagenet": ImageNet,
+    "imagenet100": ImageNet100,
+    "imagenet900": ImageNet900,
+    "imagenetsub": ImageNetSub,
+    "imagenet-r": Imagenet_R,
+    "imagenetrandom": ImageNetRandom,
+    'nch': NCH,
+    'places365': Places365,
+    "gtsrb": GTSRB,
+    "wikiart": WIKIART
+}
+
+__all__ = [cls.__name__ for cls in DATASETS.values()] + ["DATASETS", "OnlineIterDataset"]

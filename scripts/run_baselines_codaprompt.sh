@@ -2,7 +2,7 @@
 
 # --------------------------------------------------------------
 # Example Running Command:
-# bash scripts/run_baselines_l2p.sh [GPU_ID] [SEEDS] [DATASET] [EXTRA_NOTE]
+# bash scripts/run_baselines_codaprompt.sh [GPU_ID] [SEEDS] [DATASET] [EXTRA_NOTE]
 # --------------------------------------------------------------
 
 # Source the common functions and variables
@@ -22,17 +22,17 @@ echo "Using GPU: $GPU_ID"
 echo "Running experiments on dataset: $DATASET with seeds: $SEEDS"
 
 echo "========================================="
-echo "Starting L2P Baseline Experiment"
+echo "Starting CODA-P Baseline Experiment"
 echo "Dataset: $DATASET"
 echo "Seeds: $SEEDS"
 echo "Si-Blurry Setting: m=$N%, n=$M%"
 echo "Tasks: $N_TASKS"
 echo "========================================="
 
-# Run only L2P experiment
-run_experiment "l2p" "vit_base_patch16_224" "adam" 0.005 ""
+# Run only CODA-P experiment
+run_experiment "codaprompt" "vit_base_patch16_224" "adam" 0.005 ""
 
 echo "========================================="
-echo "L2P experiment completed!"
+echo "CODA-P experiment completed!"
 echo "Results saved in ${LOG_PATH} directory"
 echo "========================================="

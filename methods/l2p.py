@@ -1,54 +1,47 @@
-# When we make a new one, we should inherit the Finetune class.
 import gc
 import logging
 
-import numpy as np
 import torch
-import torchvision.transforms as transforms
 
 from methods._trainer import _Trainer
-from utils.data_loader import cutmix_data
-from utils.train_utils import select_scheduler
 
 logger = logging.getLogger()
 
 
-def cycle(iterable):
-    # iterate with shuffling
-    while True:
-        for i in iterable:
-            yield i
-
-class FT(_Trainer):
+class L2P(_Trainer):
     def __init__(self, *args, **kwargs):
-        super(FT, self).__init__(*args, **kwargs)
-    
+        super(L2P, self).__init__(*args, **kwargs)
+
+        self.task_id = 0
+
     def online_step(self, images, labels, idx):
         self.add_new_class(labels)
         # train with augmented batches
         _loss, _acc, _iter = 0.0, 0.0, 0
-        for _ in range(int(self.online_iter) * self.temp_batchsize * self.world_size):
+
+        for _ in range(int(self.online_iter)):
             loss, acc = self.online_train([images.clone(), labels.clone()])
             _loss += loss
             _acc += acc
             _iter += 1
+
         del(images, labels)
         gc.collect()
         return _loss / _iter, _acc / _iter
 
-    def online_before_task(self, task_id):
-        pass
-    
-    def online_after_task(self,task_id):
-        # self.test_data_config(test_dataloader,task_id)
-        pass
-    
     def online_train(self, data):
         self.model.train()
         total_loss, total_correct, total_num_data = 0.0, 0.0, 0.0
+
         x, y = data
+
         for j in range(len(y)):
             y[j] = self.exposed_classes.index(y[j].item())
+
+        logit_mask = torch.zeros_like(self.mask) - torch.inf
+        cls_lst = torch.unique(y)
+        for cc in cls_lst:
+            logit_mask[cc] = 0
 
         x = x.to(self.device)
         y = y.to(self.device)
@@ -56,9 +49,13 @@ class FT(_Trainer):
         x = self.train_transform(x)
 
         self.optimizer.zero_grad()
-        logit, loss = self.model_forward(x,y)
+        if not self.no_batchmask:
+            logit, loss = self.model_forward(x,y,mask=logit_mask)
+        else:
+            logit, loss = self.model_forward(x,y)
+
         _, preds = logit.topk(self.topk, 1, True, True)
-        
+
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -70,21 +67,18 @@ class FT(_Trainer):
 
         return total_loss, total_correct/total_num_data
 
-    def model_forward(self, x, y):
-        do_cutmix = self.cutmix and np.random.rand(1) < 0.5
-        if do_cutmix:
-            x, labels_a, labels_b, lam = cutmix_data(x=x, y=y, alpha=1.0)
-            with torch.cuda.amp.autocast(enabled=self.use_amp):
-                logit = self.model(x)
+    def model_forward(self, x, y, mask=None):
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            logit = self.model(x)
+            if mask is not None:
+                logit += mask
+            else:
                 logit += self.mask
-                loss = lam * self.criterion(logit, labels_a) + (1 - lam) * self.criterion(logit, labels_b)
-        else:
-            with torch.cuda.amp.autocast(enabled=self.use_amp):
-                logit = self.model(x)
-                logit += self.mask
-                loss = self.criterion(logit, y)
+
+            loss = self.criterion(logit, y)
+
         return logit, loss
-        
+
     def online_evaluate(self, test_loader, task_id=None, end=False):
         total_correct, total_num_data, total_loss = 0.0, 0.0, 0.0
         correct_l = torch.zeros(self.n_classes)
@@ -115,14 +109,7 @@ class FT(_Trainer):
 
                 total_loss += loss.item()
                 label += y.tolist()
-        if end:
-            # per task acc
-            num_per_task = int(self.n_classes/self.n_tasks)
-            if task_id is not None:
-                for ii in range(task_id+1):
-                    num_data = num_data_l[ii*num_per_task:(ii+1)*num_per_task].sum()
-                    num_correct = correct_l[ii*num_per_task:(ii+1)*num_per_task].sum()
-                    print('Task: {}: {}'.format(ii, num_correct/num_data))
+
         avg_acc = total_correct / total_num_data
         avg_loss = total_loss / len(test_loader)
         cls_acc = (correct_l / (num_data_l + 1e-5)).numpy().tolist()
@@ -130,10 +117,12 @@ class FT(_Trainer):
         eval_dict = {"avg_loss": avg_loss, "avg_acc": avg_acc, "cls_acc": cls_acc}
         return eval_dict
 
-    def update_schedule(self, reset=False):
-        if reset:
-            self.scheduler = select_scheduler(self.sched_name, self.optimizer, self.lr_gamma)
-            for param_group in self.optimizer.param_groups:
-                param_group["lr"] = self.lr
+    def online_before_task(self, task_id):
+        pass
+
+    def online_after_task(self, cur_iter):
+        if not self.distributed:
+            self.model.process_task_count()
         else:
-            self.scheduler.step()
+            self.model.module.process_task_count()
+        self.task_id += 1

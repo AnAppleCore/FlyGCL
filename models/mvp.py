@@ -1,89 +1,71 @@
 import logging
-from typing import Iterable, TypeVar
+from typing import Iterable
 
 import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.registry import register_model
-from timm.models.vision_transformer import _cfg, default_cfgs
 
-from models.vit import _create_vision_transformer
+import models.vit as vit
 
 logger = logging.getLogger()
-
-T = TypeVar('T', bound = 'nn.Module')
-
-default_cfgs['vit_base_patch16_224_l2p'] = _cfg(
-        url='https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz',
-        num_classes=21843)
-
-# Register the backbone model to timm
-@register_model
-def vit_base_patch16_224_l2p(pretrained=False, **kwargs):
-    """ ViT-Base model (ViT-B/32) from original paper (https://arxiv.org/abs/2010.11929).
-    ImageNet-21k weights @ 224x224, source https://github.com/google-research/vision_transformer.
-    NOTE: this model has valid 21k classifier head and no representation (pre-logits) layer
-    """
-    model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs)
-    model = _create_vision_transformer('vit_base_patch16_224_l2p', pretrained=pretrained, **model_kwargs)
-    return model
 
 
 class MVP(nn.Module):
     def __init__(self,
                  pos_g_prompt   : Iterable[int] = (0,1),
-                 len_g_prompt   : int   = 10,
+                 len_g_prompt   : int   = 5 ,
                  pos_e_prompt   : Iterable[int] = (2,3,4),
                  len_e_prompt   : int   = 20,
+                 g_pool         : int   = 1,
+                 e_pool         : int   = 10,
                  selection_size : int   = 1,
                  prompt_func    : str   = 'prompt_tuning',
                  task_num       : int   = 10,
-                 class_num      : int   = 100,
+                 num_classes    : int   = 100,
                  lambd          : float = 1.0,
                  use_mask       : bool  = True,
-                 use_contrastiv : bool  = False,
-                 use_last_layer : bool  = True,
+                 use_contrastiv : bool  = True,
+                 use_last_layer : bool  = False,
                  backbone_name  : str   = None,
                  **kwargs):
 
         super().__init__()
-        
-        self.features = torch.empty(0)
-        self.keys     = torch.empty(0)
 
-        if backbone_name is None:
-            raise ValueError('backbone_name must be specified')
         self.lambd       = lambd
-        self.class_num   = class_num
+        self.kwargs      = kwargs
         self.task_num    = task_num
         self.use_mask    = use_mask
+        self.num_classes = num_classes
         self.use_contrastiv  = use_contrastiv
         self.use_last_layer  = use_last_layer
         self.selection_size  = selection_size
 
-        self.add_module('backbone', timm.models.create_model(backbone_name, pretrained=True, num_classes=class_num,
-                                                             drop_rate=0.,drop_path_rate=0.,drop_block_rate=None))
+        self.task_count = 0
+
+        # Backbone
+        assert backbone_name is not None, 'backbone_name must be specified'
+        self.add_module('backbone', timm.create_model(backbone_name, pretrained=True, num_classes=num_classes))
         for name, param in self.backbone.named_parameters():
-                param.requires_grad = False
+            param.requires_grad = False
         self.backbone.fc.weight.requires_grad = True
         self.backbone.fc.bias.requires_grad   = True
 
-        self.register_buffer('pos_g_prompt', torch.tensor(pos_g_prompt, dtype=torch.int64))
-        self.register_buffer('pos_e_prompt', torch.tensor(pos_e_prompt, dtype=torch.int64))
-        self.register_buffer('similarity', torch.zeros(1))
-        
+        # Prompt
+        self.g_pool = g_pool
+        self.e_pool = e_pool = task_num
         self.len_g_prompt = len_g_prompt
         self.len_e_prompt = len_e_prompt
         self.g_length = len(pos_g_prompt) if pos_g_prompt else 0
         self.e_length = len(pos_e_prompt) if pos_e_prompt else 0
-        g_pool = 1
-        e_pool = task_num
+
+        self.register_buffer('pos_g_prompt', torch.tensor(pos_g_prompt, dtype=torch.int64))
+        self.register_buffer('pos_e_prompt', torch.tensor(pos_e_prompt, dtype=torch.int64))
+        self.register_buffer('similarity', torch.zeros(1))
 
         self.register_buffer('count', torch.zeros(e_pool))
-        self.key     = nn.Parameter(torch.randn(e_pool, self.backbone.embed_dim))
-        self.mask    = nn.Parameter(torch.zeros(e_pool, self.class_num) - 1)
+        self.learnable_key  = nn.Parameter(torch.randn(e_pool, self.backbone.embed_dim))
+        self.learnable_mask = nn.Parameter(torch.zeros(e_pool, self.num_classes) - 1)
 
         if prompt_func == 'prompt_tuning':
             self.prompt_func = self.prompt_tuning
@@ -98,23 +80,6 @@ class MVP(nn.Module):
             self.e_size = 2 * self.e_length * self.len_e_prompt
             self.g_prompts = nn.Parameter(torch.randn(g_pool, self.g_size, self.backbone.embed_dim))
             self.e_prompts = nn.Parameter(torch.randn(e_pool, self.e_size, self.backbone.embed_dim))
-
-        self.exposed_classes = 0
-
-        # if load:
-        #     e_load_path = 'pretrained_prompt/e_prompt.pt'
-        #     g_load_path = 'pretrained_prompt/g_prompt.pt'
-
-        #     # self.e_prompt.load_e(e_load_path)
-        #     print('loading from: {}'.format(g_load_path))
-        #     pt_gpt = torch.load(g_load_path)
-        #     self.g_prompts = pt_gpt.prompts
-
-    
-    @torch.no_grad()
-    def set_exposed_classes(self, classes):
-        len_classes = self.exposed_classes
-        self.exposed_classes = len(classes)
     
     def prompt_tuning(self,
                       x        : torch.Tensor,
@@ -137,7 +102,7 @@ class MVP(nn.Module):
             x = block(x)
             x = x[:, :N, :]
         return x
-    
+
     def prefix_tuning(self,
                       x        : torch.Tensor,
                       g_prompt : torch.Tensor,
@@ -200,10 +165,8 @@ class MVP(nn.Module):
                 if n == len(self.backbone.blocks) - 1 and not self.use_last_layer: break
                 query = block(query)
             query = query[:, 0]
-        if self.training:
-            self.features = torch.cat((self.features, query.detach().cpu()), dim = 0)
 
-        distance = 1 - F.cosine_similarity(query.unsqueeze(1), self.key, dim=-1)
+        distance = 1 - F.cosine_similarity(query.unsqueeze(1), self.learnable_key, dim=-1)
         if self.use_contrastiv:
             mass = (self.count + 1)
         else:
@@ -212,10 +175,10 @@ class MVP(nn.Module):
         topk = scaled_distance.topk(self.selection_size, dim=1, largest=False)[1]
         distance = distance[torch.arange(topk.size(0), device=topk.device).unsqueeze(1).repeat(1,self.selection_size), topk].squeeze().clone()
         e_prompts = self.e_prompts[topk].squeeze().clone()
-        mask = self.mask[topk].mean(1).squeeze().clone()
+        mask = self.learnable_mask[topk].mean(1).squeeze().clone()
         
         if self.use_contrastiv:
-            key_wise_distance = 1 - F.cosine_similarity(self.key.unsqueeze(1), self.key, dim=-1)
+            key_wise_distance = 1 - F.cosine_similarity(self.learnable_key.unsqueeze(1), self.learnable_key, dim=-1)
             self.similarity_loss = -((key_wise_distance[topk] / mass[topk]).exp().mean() / ((distance / mass[topk]).exp().mean() + (key_wise_distance[topk] / mass[topk]).exp().mean()) + 1e-6).log()
         else:
             self.similarity_loss = distance.mean()
@@ -230,14 +193,12 @@ class MVP(nn.Module):
         feature = self.backbone.norm(x)[:, 0]
         mask = torch.sigmoid(mask)*2.
         return feature, mask
-    
+
     def forward_head(self, feature : torch.Tensor, **kwargs) -> torch.Tensor:
         x = self.backbone.fc_norm(feature)
         x = self.backbone.fc(x)
-        # if self.use_mask:
-        #     x = x * mask
         return x
-    
+
     def forward(self, inputs : torch.Tensor, **kwargs) -> torch.Tensor:
         x, mask = self.forward_features(inputs, **kwargs)
         x = self.forward_head(x, **kwargs)
@@ -251,5 +212,8 @@ class MVP(nn.Module):
     def get_similarity_loss(self):
         return self.similarity_loss
 
-    def get_count(self):
-        return self.prompt.update()
+    def get_e_prompt_count(self):
+        return self.count
+    
+    def process_task_count(self):
+        self.task_count += 1
