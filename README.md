@@ -9,12 +9,11 @@ FlyGCL is a comprehensive research framework for **Class-Incremental Learning (C
 
 ## 🌟 Key Features
 
-- **🔬 Comprehensive Method Coverage**: Implements 15+ state-of-the-art continual learning methods
+- **🔬 Comprehensive Method Coverage**: Implements 6 state-of-the-art continual learning methods with focus on prompt-based approaches
 - **🎯 Prompt-Based Learning**: Specialized support for ViT-based prompt learning methods (L2P, DualPrompt, CODA-P, MVP)
-- **📊 Si-Blurry Setting**: Realistic continual learning scenarios with configurable data overlap
+- **📊 Si-Blurry Setting**: Realistic continual learning scenarios with configurable data overlap and class distribution
 - **🚀 Online Learning**: True streaming data simulation with configurable evaluation periods
-- **💾 Memory Management**: Efficient episodic memory handling for replay-based methods
-- **📈 Robust Evaluation**: Multi-seed experiments with comprehensive metrics (A_auc, A_last)
+- **📈 Robust Evaluation**: Multi-seed experiments with comprehensive metrics and distributed training support
 - **🔧 Distributed Training**: Multi-GPU support with PyTorch DistributedDataParallel
 - **📁 Modular Design**: Easy to extend with new methods and datasets
 
@@ -48,33 +47,21 @@ git clone https://github.com/your-username/FlyGCL.git
 cd FlyGCL
 ```
 
-2. **Create conda environment:**
-```bash
-conda env create -f environment.yml
-conda activate flygcl
-```
-
-3. **Verify installation:**
-```bash
-python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-```
-
-### Manual Installation
-
-If the conda environment fails, install dependencies manually:
-
+2. **Create conda environment and install dependencies:**
 ```bash
 conda create -n flygcl python=3.10
 conda activate flygcl
 
 # Core dependencies
 pip install torch==1.13.0 torchvision==0.14.0 torchaudio==0.13.0 --index-url https://download.pytorch.org/whl/cu117
-pip install timm==0.9.12 pytorch-lightning==2.2.1
+pip install timm pytorch-lightning
 pip install numpy pandas matplotlib scikit-learn
 pip install omegaconf datasets huggingface_hub
+```
 
-# Optional: for profiling and visualization
-pip install torchinfo torchmetrics
+3. **Verify installation:**
+```bash
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
 ```
 
 ## ⚡ Quick Start
@@ -87,6 +74,7 @@ Download and organize datasets in the following structure:
 ├── CIFAR/          # CIFAR-100
 ├── imagenet-r/     # ImageNet-R
 ├── CUB200_2011/    # CUB-200
+├── TinyImageNet/   # TinyImageNet
 └── ...
 ```
 
@@ -94,10 +82,10 @@ Download and organize datasets in the following structure:
 
 ```bash
 # Run L2P on CIFAR-100 with default settings
-python main.py --mode L2P --dataset cifar100 --data_dir /data/datasets/CIFAR
+python main.py --method l2p --dataset cifar100 --data_dir /data/datasets/CIFAR
 
-# Run MVP with contrastive learning
-python main.py --mode mvp --dataset cifar100 --use_mask --use_contrastiv --use_afs --use_mcr
+# Run MVP with enhanced features
+python main.py --method mvp --dataset cifar100 --no_batchmask
 ```
 
 ### 3. Run Comprehensive Baselines
@@ -106,28 +94,35 @@ python main.py --mode mvp --dataset cifar100 --use_mask --use_contrastiv --use_a
 # Run all baseline methods on CIFAR-100
 bash scripts/run_baselines.sh 0 1 cifar100
 
-# Parameters: GPU_ID SEED DATASET
-bash scripts/run_baselines.sh 1 42 imagenet-r
+# Parameters: GPU_ID SEED DATASET [EXTRA_NOTE]
+bash scripts/run_baselines.sh 1 "1 2 3" imagenet-r baseline_test
 ```
 
 ## 📊 Datasets
 
 ### Supported Datasets
 
-| Dataset | Classes | Train Size | Test Size | Resolution | Path Configuration |
+| Dataset | Classes | Train Size | Test Size | Resolution | Configuration Key |
 |---------|---------|------------|-----------|------------|-------------------|
-| **CIFAR-100** | 100 | 50,000 | 10,000 | 32×32 | `/data/datasets/CIFAR` |
-| **ImageNet-R** | 200 | ~120,000 | ~6,000 | 224×224 | `/data/datasets/imagenet-r` |
-| **CUB-200** | 200 | ~6,000 | ~5,800 | 224×224 | `/data/datasets/CUB200_2011` |
-| **TinyImageNet** | 200 | 100,000 | 10,000 | 64×64 | `/data/datasets/TinyImageNet` |
-| **ImageNet-100** | 100 | ~130,000 | 5,000 | 224×224 | `/data/datasets/ImageNet100` |
+| **CIFAR-10** | 10 | 50,000 | 10,000 | 32×32 | `cifar10` |
+| **CIFAR-100** | 100 | 50,000 | 10,000 | 32×32 | `cifar100` |
+| **TinyImageNet** | 200 | 100,000 | 10,000 | 64×64 | `tinyimagenet` |
+| **ImageNet-R** | 200 | ~120,000 | ~6,000 | 224×224 | `imagenet-r` |
+| **CUB-200** | 200 | ~6,000 | ~5,800 | 224×224 | `cub200` |
+| **CUB-175** | 175 | ~5,000 | ~5,000 | 224×224 | `cub175` |
+| **CARS-196** | 196 | ~8,000 | ~8,000 | 224×224 | `cars196` |
+| **ImageNet-100** | 100 | ~130,000 | 5,000 | 224×224 | `imagenet100` |
+| **ImageNet-900** | 900 | ~1.2M | ~45,000 | 224×224 | `imagenet900` |
+| **Places365** | 365 | ~1.8M | ~36,500 | 224×224 | `places365` |
+| **GTSRB** | 43 | ~39,000 | ~12,600 | 32×32 | `gtsrb` |
+| **WikiArt** | 195 | ~80,000 | ~10,000 | 224×224 | `wikiart` |
 
 ### Dataset Download Instructions
 
 <details>
 <summary>Click to expand dataset download instructions</summary>
 
-**CIFAR-100**: Automatically downloaded by torchvision
+**CIFAR-10/100**: Automatically downloaded by torchvision
 
 **ImageNet-R**:
 ```bash
@@ -141,78 +136,87 @@ wget http://www.vision.caltech.edu/visipedia-data/CUB-200-2011/CUB_200_2011.tgz
 tar -xzf CUB_200_2011.tgz -C /data/datasets/
 ```
 
+**TinyImageNet**:
+```bash
+wget http://cs231n.stanford.edu/tiny-imagenet-200.zip
+unzip tiny-imagenet-200.zip -d /data/datasets/
+mv /data/datasets/tiny-imagenet-200 /data/datasets/TinyImageNet
+```
+
 </details>
 
 ## 🧠 Implemented Methods
-
-### Simple Baseline Methods
-
-| Method | Description | Key Features |
-|--------|-------------|--------------|
-| **Sequential Fine-tuning** | Standard fine-tuning approach | Full model update, catastrophic forgetting baseline |
-| **Linear Probe** | Freeze backbone, train classifier only | Parameter-efficient, limited adaptability |
 
 ### Prompt-Based Continual Learning Methods
 
 | Method | Paper | Key Innovation | Implementation |
 |--------|-------|----------------|----------------|
-| **L2P** | [Learning to Prompt](https://arxiv.org/abs/2112.06905) | Learnable prompt selection | `methods/L2P.py` |
+| **L2P** | [Learning to Prompt](https://arxiv.org/abs/2112.06905) | Learnable prompt selection with pool | `methods/l2p.py` |
 | **DualPrompt** | [DualPrompt](https://arxiv.org/abs/2204.04799) | E-prompts + G-prompts | `methods/dualprompt.py` |
 | **CODA-Prompt** | [CODA-Prompt](https://arxiv.org/abs/2211.13860) | Domain-adaptive prompting | `methods/codaprompt.py` |
 | **MVP** | [Multi-Visual Prompting](https://arxiv.org/abs/2306.12842) | Contrastive prompting + AFS/MCR | `methods/mvp.py` |
 
-### Memory-Based Methods
+### Additional Methods
 
-| Method | Description | Memory Strategy |
-|--------|-------------|-----------------|
-| **Experience Replay (ER)** | Store and replay past samples | Random sampling |
-| **DER++** | Dark Experience Replay++ | Logit distillation + replay |
-| **Rainbow Memory** | Advanced memory management | Gradient-based selection |
-
-### Regularization-Based Methods
-
-| Method | Key Technique | Implementation |
-|--------|---------------|----------------|
-| **LwF** | Learning without Forgetting | Knowledge distillation |
-| **EWC** | Elastic Weight Consolidation | Fisher information matrix |
+| Method | Description | Implementation |
+|--------|-------------|----------------|
+| **SLCA** | Sequential Learning with Class Adaptation | `methods/slca.py` |
+| **FlyPrompt** | Framework-specific prompt method | `methods/flyprompt.py` |
 
 ## 📋 Experiment Configuration
 
 ### Si-Blurry Setting
 
-The framework implements the **Si-Blurry** continual learning setting:
+The framework implements the **Si-Blurry** continual learning setting with precise control:
 
-- **Disjoint Class Ratio (m)**: Percentage of task-specific classes (default: 50%)
-- **Blurry Sample Ratio (n)**: Percentage of overlapping samples (default: 10%)
+- **Disjoint Class Ratio (n)**: Percentage of task-specific classes (default: 50%)
+- **Blurry Sample Ratio (m)**: Percentage of overlapping samples (default: 10%)
 - **Tasks**: Number of incremental tasks (default: 5)
-- **Online Learning**: 1 epoch per sample stream
+- **Online Learning**: Configurable epochs and iterations per sample stream
+
+> **⚠️ Important**: Parameter `n` controls disjoint classes, `m` controls blurry samples. This differs from some documentation conventions.
 
 ### Key Configuration Parameters
 
 ```python
-# Core settings
+# Core Si-Blurry settings
 --dataset cifar100              # Dataset choice
 --n_tasks 5                     # Number of tasks
---m 50                          # Disjoint class ratio (%)
---n 10                          # Blurry sample ratio (%)
---memory_size 500               # Episodic memory size
+--n 50                          # Disjoint class ratio (%)
+--m 10                          # Blurry sample ratio (%)
+--rnd_NM                        # Randomly vary N/M across tasks
 
 # Training settings
 --batchsize 64                  # Batch size
 --lr 0.005                      # Learning rate
 --num_epochs 1                  # Epochs per task (online learning)
 --online_iter 3                 # Updates per sample
+--eval_period 1000              # Evaluation frequency
 
 # Model settings
---model_name vit_finetune       # ViT-B/16 backbone
+--backbone vit_base_patch16_224 # ViT-B/16 backbone
 --opt_name adam                 # Optimizer choice
+--sched_name default            # Scheduler choice
 --use_amp                       # Mixed precision training
 
-# Method-specific
---use_mask                      # Enable logit masking (MVP)
---use_contrastiv               # Enable contrastive loss (MVP)
---use_afs                      # Adaptive Feature Scaling (MVP)
---use_mcr                      # Minor-Class Reinforcement (MVP)
+# Method-specific (MVP)
+--no_batchmask                  # Disable batch-wise masking
+```
+
+### Advanced Configuration Options
+
+```python
+# Data processing
+--transforms autoaug            # Data augmentation strategy
+--n_worker 8                    # Data loading workers
+
+# Distributed training
+--world_size 2                  # Number of distributed processes
+--distributed                   # Enable distributed training
+
+# Evaluation
+--topk 1                        # Top-k accuracy evaluation
+--profile                       # Enable profiling mode
 ```
 
 ## 💻 Usage Examples
@@ -222,21 +226,21 @@ The framework implements the **Si-Blurry** continual learning setting:
 ```bash
 # Train L2P on CIFAR-100
 python main.py \
-    --mode L2P \
+    --method l2p \
     --dataset cifar100 \
     --n_tasks 5 \
-    --m 50 --n 10 \
+    --n 50 --m 10 \
     --seeds 1 2 3 4 5 \
     --data_dir /data/datasets/CIFAR \
     --note "l2p_baseline_experiment"
 
-# Train MVP with all enhancements
+# Train MVP with enhanced features
 python main.py \
-    --mode mvp \
+    --method mvp \
     --dataset imagenet-r \
-    --use_mask --use_contrastiv --use_afs --use_mcr \
-    --alpha 0.5 --gamma 1.0 --margin 0.5 \
-    --data_dir /data/datasets/imagenet-r
+    --no_batchmask \
+    --data_dir /data/datasets/imagenet-r \
+    --note "mvp_enhanced"
 ```
 
 ### Advanced Configuration
@@ -244,32 +248,31 @@ python main.py \
 ```bash
 # Memory-efficient settings for large datasets
 python main.py \
-    --mode DualPrompt \
+    --method dualprompt \
     --dataset imagenet-r \
     --batchsize 32 \
-    --memory_size 1000 \
     --eval_period 500 \
     --use_amp \
     --n_worker 8
 
-# Multi-GPU training
-CUDA_VISIBLE_DEVICES=0,1 python main.py \
-    --mode L2P \
+# Varying N/M ratio across tasks
+python main.py \
+    --method codaprompt \
     --dataset cub200 \
-    --distributed \
-    --world_size 2
+    --rnd_NM \
+    --n_tasks 10 \
+    --note "varying_nm_experiment"
 ```
 
 ### Batch Experiments
 
 ```bash
-# Run all baselines on CIFAR-100
-bash scripts/run_baselines.sh 0 1 cifar100
+# Run all baselines on CIFAR-100 with specific seeds
+bash scripts/run_baselines.sh 0 "1 2 3 4 5" cifar100 comprehensive_test
 
-# Run specific method with multiple seeds
-for seed in 1 2 3 4 5; do
-    python main.py --mode L2P --dataset cifar100 --rnd_seed $seed
-done
+# Run method-specific experiments
+bash scripts/run_baselines_mvp.sh 1 "1 2 3" imagenet-r mvp_test
+bash scripts/run_baselines_l2p.sh 2 "1 2 3" cub200 l2p_test
 ```
 
 ## 📁 Code Structure
@@ -281,35 +284,49 @@ FlyGCL/
 │   └── logging.conf           # Logging configuration
 ├── 📁 datasets/               # Dataset implementations
 │   ├── __init__.py           # Dataset registry
-│   ├── CIFAR100.py           # CIFAR-100 dataset
+│   ├── CIFAR100.py           # (Handled by torchvision)
 │   ├── Imagenet_R.py         # ImageNet-R dataset
-│   └── ...                   # Other dataset implementations
+│   ├── CUB200.py             # CUB-200 dataset
+│   ├── TinyImageNet.py       # TinyImageNet dataset
+│   ├── CARS196.py            # Stanford Cars dataset
+│   ├── WIKIART.py            # WikiArt dataset
+│   ├── GTSRB.py              # German Traffic Sign Recognition
+│   └── OnlineIterDataset.py  # Online iteration wrapper
 ├── 📁 methods/                # Continual learning methods
 │   ├── __init__.py           # Method registry
 │   ├── _trainer.py           # Base trainer class
-│   ├── L2P.py               # Learning to Prompt
+│   ├── l2p.py               # Learning to Prompt
 │   ├── dualprompt.py        # DualPrompt implementation
 │   ├── mvp.py               # Multi-Visual Prompting
 │   ├── codaprompt.py        # CODA-Prompt
-│   └── ...                  # Other method implementations
+│   ├── slca.py              # Sequential Learning with Class Adaptation
+│   └── flyprompt.py         # Framework-specific method
 ├── 📁 models/                 # Model architectures
+│   ├── __init__.py          # Model registry
 │   ├── vit.py               # Vision Transformer implementations
-│   ├── L2P.py               # L2P-specific model components
+│   ├── l2p.py               # L2P-specific model components
 │   ├── dualprompt.py        # DualPrompt model components
-│   └── ...                  # Other model files
+│   ├── mvp.py               # MVP model components
+│   ├── codaprompt.py        # CODA-Prompt model components
+│   └── layers.py            # Custom layer implementations
 ├── 📁 utils/                  # Utility functions
-│   ├── memory.py            # Memory management utilities
+│   ├── onlinesampler.py     # Si-Blurry sampling logic
 │   ├── data_loader.py       # Data loading utilities
 │   ├── train_utils.py       # Training helper functions
-│   └── ...                  # Other utilities
+│   ├── memory.py            # Memory management utilities
+│   ├── buffer.py            # Buffer management
+│   └── augment.py           # Data augmentation utilities
 ├── 📁 scripts/               # Experiment scripts
 │   ├── run_baselines.sh     # Main baseline script
-│   ├── run_baselines_l2p_50_10.sh
-│   └── ...                  # Other experiment scripts
+│   ├── run_baselines_l2p.sh # L2P-specific experiments
+│   ├── run_baselines_mvp.sh # MVP-specific experiments
+│   ├── run_baselines_dualprompt.sh # DualPrompt experiments
+│   ├── run_baselines_codaprompt.sh # CODA-Prompt experiments
+│   └── common_baselines.sh  # Common experiment utilities
 ├── 📁 results/               # Experiment results and logs
 ├── 📁 pretrained_prompt/     # Pre-trained prompt weights
 ├── main.py                   # Main entry point
-├── environment.yml           # Conda environment specification
+├── run.sh                    # Custom experiment runner
 └── README.md                # This documentation
 ```
 
@@ -317,59 +334,60 @@ FlyGCL/
 
 **🔧 Core Framework (`methods/_trainer.py`)**
 - Base trainer class with distributed training support
-- Online learning simulation with configurable evaluation
-- Memory management and data streaming
+- Online learning simulation with Si-Blurry sampling
+- Memory management and streaming data handling
 - Mixed precision training and optimization
+- Comprehensive evaluation with configurable periods
 
 **🧠 Method Implementations (`methods/`)**
 - Each method inherits from `_Trainer`
 - Implements method-specific `online_step()` and `online_train()`
-- Modular design for easy extension
+- Modular design for easy extension and comparison
 
 **🏗️ Model Architecture (`models/`)**
-- ViT backbone with prompt integration
-- Method-specific model components
+- ViT backbone with frozen weights (except classifier)
+- Method-specific prompt integration strategies
 - Pre-trained weight loading and initialization
 
-**💾 Memory Management (`utils/memory.py`)**
-- Efficient episodic memory storage
-- Class-balanced sampling strategies
-- Loss-based sample selection
+**📊 Si-Blurry Sampling (`utils/onlinesampler.py`)**
+- Sophisticated class and sample distribution control
+- Support for varying N/M ratios across tasks
+- Distributed training compatible sampling
 
 ## 📈 Results and Evaluation
 
 ### Metrics
 
-- **A_auc**: Area under the accuracy curve (higher is better)
-- **A_last**: Final task accuracy (higher is better)
+- **A_auc**: Area under the accuracy curve across all tasks
+- **A_last**: Final task accuracy after all training
 - **Per-task accuracy**: Individual task performance tracking
-- **Memory efficiency**: Memory usage vs. performance trade-offs
+- **Memory efficiency**: Memory usage vs. performance analysis
 
 ### Result Analysis
 
-Results are automatically saved in the `results/` directory with the following structure:
+Results are automatically saved with structured logging:
 
 ```
 results/
 ├── logs/
 │   └── {dataset}/
 │       └── {method}_{dataset}_{note}/
-│           ├── seed_{seed}_log.txt    # Training logs
+│           ├── seed_{seed}_log.txt    # Detailed training logs
 │           └── ...
-└── {method}_{dataset}_{timestamp}.json   # Experiment results
+└── {method}_{dataset}_{timestamp}.json   # Structured results
 ```
 
 ### Viewing Results
 
 ```bash
 # Monitor running experiment
-tail -f results/logs/cifar100/L2P_cifar100_baseline/seed_1_log.txt
+tail -f results/logs/cifar100/l2p_cifar100_baseline/seed_1_log.txt
 
 # View completed results
 ls -la results/ | grep baseline
 
-# Parse results with custom scripts
-python utils/parse_results.py --result_dir results/
+# Parse results for analysis
+python utils/generate_csv_from_logs.ipynb  # Jupyter notebook for analysis
 ```
 
 ## 🤝 Contributing
@@ -405,16 +423,9 @@ class YourMethod(_Trainer):
 ### Adding a New Dataset
 
 1. **Create dataset file**: `datasets/your_dataset.py`
-2. **Follow existing patterns**: Inherit from appropriate base class
+2. **Follow existing patterns**: Check existing implementations
 3. **Register dataset**: Add to `datasets/__init__.py`
 4. **Update statistics**: Add to `utils/data_loader.py`
-
-### Code Style
-
-- Follow PEP 8 guidelines
-- Add docstrings for all functions
-- Include type hints where appropriate
-- Write unit tests for new functionality
 
 ## 🐛 Troubleshooting
 
@@ -425,8 +436,8 @@ class YourMethod(_Trainer):
 # Solution 1: Reduce batch size
 python main.py --batchsize 32  # or even 16
 
-# Solution 2: Use gradient accumulation
-python main.py --online_iter 1 --batchsize 64
+# Solution 2: Reduce online iterations
+python main.py --online_iter 1
 
 # Solution 3: Enable mixed precision
 python main.py --use_amp
@@ -448,28 +459,18 @@ python main.py --data_dir $DATA_DIR
 nvidia-smi
 python -c "import torch; print(torch.cuda.is_available())"
 
-# Reinstall PyTorch with correct CUDA version
-pip install torch==1.13.0+cu117 -f https://download.pytorch.org/whl/torch_stable.html
+# Check timm installation
+python -c "import timm; print(timm.__version__)"
 ```
 
-**📊 Performance Issues**
+**📊 Si-Blurry Configuration**
 ```bash
-# Enable profiling
-python main.py --profile
+# Ensure proper N/M values
+python main.py --n 50 --m 10  # 50% disjoint, 10% blurry overlap
 
-# Reduce workers if I/O bound
-python main.py --n_worker 4
-
-# Use smaller input resolution
-python main.py --transforms none  # Remove AutoAugment
+# Enable random N/M variation
+python main.py --rnd_NM
 ```
-
-### Getting Help
-
-1. **Check logs**: Review detailed logs in `results/logs/`
-2. **Issues**: Open GitHub issues with logs and configuration
-3. **Discussions**: Use GitHub Discussions for questions
-4. **Documentation**: Refer to method-specific papers for details
 
 ## 📚 Citation
 
@@ -489,7 +490,7 @@ If you use FlyGCL in your research, please cite:
 Please also consider citing the original papers for the methods you use:
 
 - **L2P**: Wang et al., "Learning to Prompt for Continual Learning", CVPR 2022
-- **DualPrompt**: Wang et al., "DualPrompt: Complementary Prompting for Rehearsal-free Continual Learning", ECCV 2022
+- **DualPrompt**: Wang et al., "DualPrompt: Complementary Prompting for Rehearsal-free Continual Learning", ECCV 2022  
 - **CODA-Prompt**: Smith et al., "CODA-Prompt: COntinual Decomposed Attention-based Prompting for Rehearsal-Free Continual Learning", CVPR 2023
 - **MVP**: Jia et al., "Multi-Visual Prompting for Rehearsal-free Continual Learning", arXiv 2023
 
