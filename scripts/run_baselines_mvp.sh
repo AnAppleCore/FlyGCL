@@ -30,7 +30,7 @@ echo "Tasks: $N_TASKS"
 echo "========================================="
 
 # Run only MVP experiment
-run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 "--no_batchmask"
+run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 ""
 
 echo "========================================="
 echo "MVP experiment completed!"
