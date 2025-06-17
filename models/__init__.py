@@ -3,6 +3,7 @@ from .dualprompt import DualPrompt
 from .flyprompt import FlyPrompt
 from .l2p import L2P
 from .mvp import MVP
+from .ranpac import RanPAC
 
 MODELS = {
     "codaprompt": CodaPrompt,
@@ -10,4 +11,5 @@ MODELS = {
     "flyprompt": FlyPrompt,
     "l2p": L2P,
     "mvp": MVP,
+    "ranpac": RanPAC,
 }

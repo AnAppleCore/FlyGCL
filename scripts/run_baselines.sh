@@ -120,7 +120,10 @@ run_experiment "l2p" "vit_base_patch16_224" "adam" 0.005 ""
 run_experiment "dualprompt" "vit_base_patch16_224" "adam" 0.005 ""
 
 # MVP (with contrastive loss + logit masking)
-run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 "--no_batchmask"
+run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 ""
+
+# RanPAC (uses random projection)
+run_experiment "ranpac" "vit_base_patch16_224" "adam" 0.005 ""
 
 echo "========================================="
 echo "All experiments completed!"
