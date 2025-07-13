@@ -34,28 +34,31 @@ class RanPAC(_Trainer):
             _acc += acc
             _iter += 1
 
-        del(images, labels)
-        gc.collect()
+        self._collect_features_for_statistics(images, labels)
+
         return _loss / _iter, _acc / _iter
 
     def _collect_features_for_statistics(self, images, labels):
+        images_copy = images.clone()
+        labels_copy = labels.clone()
+        
         # Map labels to exposed class indices
-        for j in range(len(labels)):
-            labels[j] = self.exposed_classes.index(labels[j].item())
+        for j in range(len(labels_copy)):
+            labels_copy[j] = self.exposed_classes.index(labels_copy[j].item())
 
-        images = images.to(self.device)
-        labels = labels.to(self.device)
+        images_copy = images_copy.to(self.device)
+        labels_copy = labels_copy.to(self.device)
 
-        images = self.train_transform(images)
+        images_copy = self.test_transform_tensor(images_copy)
 
         with torch.no_grad():
             self.model.eval()
             if self.distributed:
-                self.model.module.collect_features_labels(images, labels)
+                self.model.module.collect_features_labels(images_copy, labels_copy)
             else:
-                self.model.collect_features_labels(images, labels)
+                self.model.collect_features_labels(images_copy, labels_copy)
 
-        del(images, labels)
+        del images_copy, labels_copy
         gc.collect()
         return 0.0, 0.0  # No training loss/acc for subsequent tasks
 

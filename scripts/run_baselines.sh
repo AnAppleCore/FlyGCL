@@ -108,7 +108,7 @@ echo "========================================="
 
 # TODO: Add SLCA
 # Seq FT (SL) - Sequential Fine-tuning with low backbone learning rate
-# run_experiment "slca" "vit_base_patch16_224" "sgd_sl" 0.00005 ""
+run_experiment "slca" "vit_base_patch16_224" "sgd_sl" 0.00005 ""
 
 # CODA-P (uses prefix tuning)
 run_experiment "codaprompt" "vit_base_patch16_224" "adam" 0.005 ""

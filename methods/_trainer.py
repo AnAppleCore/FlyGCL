@@ -92,6 +92,12 @@ class _Trainer():
                 transforms.ToTensor(),
                 transforms.Normalize(mean, std),])
 
+        # Create tensor-compatible test transform for cases where input is already a tensor
+        self.test_transform_tensor = transforms.Compose([
+                transforms.Resize((inp_size, inp_size)),
+                # No ToTensor() since input is already a tensor
+                transforms.Normalize(mean, std),])
+
         if 'imagenet' in self.dataset or 'cub' in self.dataset or 'car' in self.dataset:
             self.load_transform = transforms.Compose([
                 transforms.Resize((inp_size, inp_size)),
