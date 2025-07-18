@@ -125,6 +125,9 @@ run_experiment "mvp" "vit_base_patch16_224" "adam" 0.005 ""
 # RanPAC (uses random projection)
 run_experiment "ranpac" "vit_base_patch16_224" "adam" 0.005 ""
 
+# MoE-RanPAC (uses random projection)
+run_experiment "moeranpac" "vit_base_patch16_224" "adam" 0.005 ""
+
 echo "========================================="
 echo "All experiments completed!"
 echo "Results saved in ${LOG_PATH} directory"
