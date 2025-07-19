@@ -176,45 +176,22 @@ class MoERanPAC(_Trainer):
         return eval_dict
     
     def save_final_task_results(self, test_loader):
-        label = []
-        expert_outputs = []
-
-        self.model.eval()
-        with torch.no_grad():
-            for i, data in enumerate(test_loader):
-                x, y = data
-                
-                # Map labels to exposed class indices
-                for j in range(len(y)):
-                    y[j] = self.exposed_classes.index(y[j].item())
-
-                x = x.to(self.device)
-                y = y.to(self.device)
-
-                expert_output = self.model.forward_experts(x)
-                expert_outputs.append(expert_output)
-                label += y.tolist()
-
-        expert_outputs = torch.cat(expert_outputs, dim=0).cpu().numpy()
-        label = torch.tensor(label).cpu().numpy()
-
-        # # save expert outputs and labels
-        # if self.rnd_seed == 1:
-        #     np.savez(f"expert_outputs_{self.task_id}.npz", expert_outputs=expert_outputs, label=label)
+        # This method is no longer needed since we removed expert outputs
+        pass
 
     def online_before_task(self, task_id):
         if task_id == 0:
             if not self.distributed:
-                if self.model.use_g_prompt:
-                    self.model.freeze_backbone_except_prompts()
-                    logger.info("First task: g-prompts and classifier enabled for training")
+                if self.model.use_lora:
+                    self.model.freeze_backbone_except_lora()
+                    logger.info("First task: LoRA and classifier enabled for training")
                 else:
                     self.model.freeze_backbone_except_adapters()
                     logger.info("First task: adapters and classifier enabled for training")
             else:
-                if self.model.module.use_g_prompt:
-                    self.model.module.freeze_backbone_except_prompts()
-                    logger.info("First task: g-prompts and classifier enabled for training")
+                if self.model.module.use_lora:
+                    self.model.module.freeze_backbone_except_lora()
+                    logger.info("First task: LoRA and classifier enabled for training")
                 else:
                     self.model.module.freeze_backbone_except_adapters()
                     logger.info("First task: adapters and classifier enabled for training")
@@ -223,12 +200,9 @@ class MoERanPAC(_Trainer):
                 self.model.freeze_all_except_classifier()
             else:
                 self.model.module.freeze_all_except_classifier()
-            
-            if not self.distributed:
-                mode = "g-prompt" if self.model.use_g_prompt else "adapter"
-            else:
-                mode = "g-prompt" if self.model.module.use_g_prompt else "adapter"
-            logger.info(f"Task {task_id} ({mode} mode): collecting features for MoE-RanPAC statistics")
+
+            mode = "LoRA" if (self.model.use_lora if not self.distributed else self.model.module.use_lora) else "adapter"
+            logger.info(f"Task {task_id} ({mode} mode): collecting features for RanPAC statistics")
 
     def online_after_task(self, cur_iter):
         if self.task_id == 0:
@@ -236,18 +210,33 @@ class MoERanPAC(_Trainer):
 
             if not self.distributed:
                 self.model.setup_rp()
+                # Merge LoRA weights if using LoRA and merging is enabled
+                if self.model.use_lora:
+                    self.model.merge_lora_weights()
+                    if self.model.merge_lora:
+                        logger.info("LoRA weights merged, no additional parameters needed")
+                    else:
+                        logger.info("LoRA weights kept separate for comparison")
                 self.model.freeze_all_except_classifier()
             else:
                 self.model.module.setup_rp()
+                # Merge LoRA weights if using LoRA and merging is enabled
+                if self.model.module.use_lora:
+                    self.model.module.merge_lora_weights()
+                    if self.model.module.merge_lora:
+                        logger.info("LoRA weights merged, no additional parameters needed")
+                    else:
+                        logger.info("LoRA weights kept separate for comparison")
                 self.model.module.freeze_all_except_classifier()
 
             self.first_task_completed = True
-            logger.info("Random projection initialized, adapters frozen")
+            mode = "LoRA" if (self.model.use_lora if not self.distributed else self.model.module.use_lora) else "adapters"
+            logger.info(f"Random projection initialized, {mode} processed")
 
         if not self.distributed:
             self.model.process_task_count()
         else:
             self.model.module.process_task_count()
-        
+
         logger.info(f"Task {self.task_id} completed, statistics updated")
         self.task_id += 1

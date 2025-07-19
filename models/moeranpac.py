@@ -8,10 +8,107 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import models.vit as vit
-from models.l2p import Prompt
 from models.ranpac import Adapter
 
 logger = logging.getLogger()
+
+
+class LoRALayer(nn.Module):
+    """LoRA (Low-Rank Adaptation) layer for linear transformations"""
+    def __init__(self, in_features, out_features, rank=64, alpha=1.0):
+        super().__init__()
+        self.rank = rank
+        self.alpha = alpha
+        self.in_features = in_features
+        self.out_features = out_features
+
+        # LoRA parameters: W = W_0 + (alpha/rank) * B @ A
+        # Initialize A with normal distribution, B with zeros (standard LoRA initialization)
+        # This ensures initial LoRA contribution is exactly zero
+        self.lora_A = nn.Parameter(torch.randn(rank, in_features) / math.sqrt(rank))
+        self.lora_B = nn.Parameter(torch.zeros(out_features, rank))
+
+    def forward(self, x):
+        # x: [batch_size, seq_len, in_features]
+        # return: [batch_size, seq_len, out_features]
+        return (x @ self.lora_A.T @ self.lora_B.T) * (self.alpha / self.rank)
+
+    def get_merged_weight(self):
+        """Get the weight matrix to be added to the original weight"""
+        return (self.alpha / self.rank) * (self.lora_B @ self.lora_A)
+
+
+class LoRAAttention(nn.Module):
+    """Attention module with LoRA applied to K and V projections"""
+    def __init__(self, original_attention, rank=64, alpha=1.0):
+        super().__init__()
+        self.original_attention = original_attention
+        self.dim = original_attention.qkv.in_features
+        self.num_heads = original_attention.num_heads
+        self.lora_merged = False  # Track if LoRA weights have been merged
+
+        # LoRA for K and V projections (each takes dim -> dim of the qkv projection)
+        self.lora_k = LoRALayer(self.dim, self.dim, rank, alpha)
+        self.lora_v = LoRALayer(self.dim, self.dim, rank, alpha)
+
+    def forward(self, x):
+        # If LoRA weights have been merged, just use original attention
+        if self.lora_merged:
+            return self.original_attention(x)
+
+        B, N, C = x.shape
+
+        # Original QKV projection
+        qkv = self.original_attention.qkv(x)  # [B, N, 3*dim]
+
+        # Add LoRA contributions to K and V
+        k_lora = self.lora_k(x)  # [B, N, dim]
+        v_lora = self.lora_v(x)  # [B, N, dim]
+
+        # Reshape and split QKV
+        qkv = qkv.reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)
+
+        # Add LoRA to K and V
+        k_lora = k_lora.reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        v_lora = v_lora.reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+
+        k = k + k_lora
+        v = v + v_lora
+
+        # Standard attention computation
+        attn = (q @ k.transpose(-2, -1)) * self.original_attention.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.original_attention.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.original_attention.proj(x)
+        x = self.original_attention.proj_drop(x)
+        return x
+
+    def merge_lora_weights(self):
+        """Merge LoRA weights into the original QKV projection"""
+        if self.lora_merged:
+            logger.warning("LoRA weights already merged for this attention layer")
+            return
+
+        with torch.no_grad():
+            # Get the merged weights for K and V
+            k_weight = self.lora_k.get_merged_weight()  # [dim, dim]
+            v_weight = self.lora_v.get_merged_weight()  # [dim, dim]
+
+            # The original qkv weight is [3*dim, dim], structured as [Q_weight; K_weight; V_weight]
+            # We need to add our LoRA weights to the K and V portions
+            qkv_weight = self.original_attention.qkv.weight.data  # [3*dim, dim]
+
+            # Add LoRA weights to K and V portions
+            qkv_weight[self.dim:2*self.dim, :] += k_weight  # K portion
+            qkv_weight[2*self.dim:3*self.dim, :] += v_weight  # V portion
+
+            # Mark as merged
+            self.lora_merged = True
+
+        logger.info("LoRA weights merged into attention layer")
 
 
 class MoERanPACClassifier(nn.Module):
@@ -20,8 +117,6 @@ class MoERanPACClassifier(nn.Module):
                  num_classes  : int,
                  use_RP       : bool,
                  M            : int,
-                 num_experts  : int,
-                 expert_dim   : int,
                  **kwargs):
 
         super().__init__()
@@ -30,27 +125,22 @@ class MoERanPACClassifier(nn.Module):
         self.num_classes = num_classes
         self.use_RP = use_RP
         self.M = M
-        self.num_experts = num_experts
-        self.expert_dim = expert_dim
 
         self.rp_initialized = False
 
         # Initialize with standard linear layer
         self.fc = nn.Linear(feature_dim, num_classes, bias=False)
-        self.experts = None
 
         # Random projection matrix (will be initialized after first task)
         self.register_buffer('W_rand', torch.empty(0))
 
-        # Statistics matrices for MoE-RanPAC
+        # Statistics matrices for RanPAC
         if self.use_RP and self.M > 0:
-            self.register_buffer('Q', torch.zeros(self.num_experts, self.expert_dim, num_classes))
-            self.register_buffer('G', torch.zeros(self.num_experts, self.expert_dim, self.expert_dim))
-            self.register_buffer('expert_mask', torch.zeros(self.num_experts, self.M, dtype=torch.bool))
+            self.register_buffer('Q', torch.zeros(self.M, num_classes))
+            self.register_buffer('G', torch.zeros(self.M, self.M))
         else:
-            self.register_buffer('Q', torch.zeros(self.num_experts, self.expert_dim, num_classes))
-            self.register_buffer('G', torch.zeros(self.num_experts, self.expert_dim, self.expert_dim))
-            self.register_buffer('expert_mask', torch.zeros(self.num_experts, feature_dim, dtype=torch.bool))
+            self.register_buffer('Q', torch.zeros(feature_dim, num_classes))
+            self.register_buffer('G', torch.zeros(feature_dim, feature_dim))
 
         # Buffers for collecting features and labels during each task
         self.register_buffer('collected_features', torch.empty(0))
@@ -60,20 +150,6 @@ class MoERanPACClassifier(nn.Module):
         if self.use_RP and self.M > 0 and not self.rp_initialized:
             self.W_rand = torch.randn(self.feature_dim, self.M, device=device)
             self.fc = nn.Linear(self.M, self.num_classes, bias=False).to(device)
-            self.experts = nn.ModuleList([
-                nn.Linear(self.expert_dim, self.num_classes, bias=False) 
-                for _ in range(self.num_experts)
-            ]).to(device)
-            for i in range(self.num_experts):
-                # random select expert_dim features for each expert
-                # idx = torch.randperm(self.M)[:self.expert_dim]
-                # self.expert_mask[i, idx] = 1
-
-                # split M into expert_dim parts
-                self.expert_mask[i, i*self.expert_dim:(i+1)*self.expert_dim] = 1
-
-                # TODO: try other selection methods
-
             self.rp_initialized = True
             logger.info(f"Random projection initialized: {self.feature_dim} -> {self.M}")
 
@@ -96,17 +172,6 @@ class MoERanPACClassifier(nn.Module):
         onehot = torch.zeros(targets.size(0), num_classes)
         onehot.scatter_(1, targets.unsqueeze(1), 1)
         return onehot
-    
-    def _get_expert_class_weights(self, labels, expert_id):
-        # 0, 1: hard assignment
-        weights = torch.ones(len(labels))
-        for i, label in enumerate(labels):
-            class_affinity = (label.item() + expert_id * 37) % self.num_experts
-            if class_affinity == expert_id:
-                weights[i] = 1.0
-            else:
-                weights[i] = 0.0
-        return weights
 
     def optimise_ridge_parameter(self, Features, Y):
         """Optimize ridge parameter using cross-validation"""
@@ -148,40 +213,23 @@ class MoERanPACClassifier(nn.Module):
         Q_cpu = self.Q.cpu()
         G_cpu = self.G.cpu()
 
-        for e in range(self.num_experts):
-            expert_mask_e = self.expert_mask[e].cpu()
-            features_h_e = features_h[:, expert_mask_e]
-
-            class_weights_e = self._get_expert_class_weights(labels, e)
-            # features_h_e = features_h_e * class_weights_e.unsqueeze(-1)
-            Y_e = Y * class_weights_e.unsqueeze(-1)
-
-            Q_e = features_h_e.T @ Y_e
-            G_e = features_h_e.T @ features_h_e
-            Q_cpu[e] = Q_cpu[e] + Q_e
-            G_cpu[e] = G_cpu[e] + G_e
-
-            # Optimize ridge parameter and compute classifier weights
-            if features_h.size(0) > 1:  # Need at least 2 samples for cross-validation
-                ridge = self.optimise_ridge_parameter(features_h_e, Y_e)
-                Wo = torch.linalg.solve(G_cpu[e] + ridge * torch.eye(G_cpu[e].size(dim=0)), Q_cpu[e]).T
-
-                # Update classifier weights
-                self.experts[e].weight.data = Wo.to(self.experts[e].weight.device)
-
-        # if features_h.size(0) > 1:  # Need at least 2 samples for cross-validation
-        #     ridge = self.optimise_ridge_parameter(features_h, Y)
-        #     Wo = torch.linalg.solve(G_cpu + ridge * torch.eye(G_cpu.size(dim=0)), Q_cpu).T
-
-        #     # Update classifier weights
-        #     device = self.fc.weight.device
-        #     self.fc.weight.data = Wo.to(device)
-
-        logger.info("Classifier weights updated using MoE-RanPAC statistics")
+        # Update statistics matrices (all on CPU)
+        Q_cpu = Q_cpu + features_h.T @ Y
+        G_cpu = G_cpu + features_h.T @ features_h
 
         # Move updated matrices back to original device
         self.Q = Q_cpu.to(self.Q.device)
         self.G = G_cpu.to(self.G.device)
+
+        # Optimize ridge parameter and compute classifier weights
+        if features_h.size(0) > 1:  # Need at least 2 samples for cross-validation
+            ridge = self.optimise_ridge_parameter(features_h, Y)
+            Wo = torch.linalg.solve(G_cpu + ridge * torch.eye(G_cpu.size(dim=0)), Q_cpu).T
+
+            # Update classifier weights
+            device = self.fc.weight.device
+            self.fc.weight.data = Wo.to(device)
+            logger.info("Classifier weights updated using RanPAC statistics")
 
         # Clear collected data for next task
         self.clear_collected_data()
@@ -193,20 +241,15 @@ class MoERanPACClassifier(nn.Module):
             'collected_features': self.collected_features.clone(),
             'collected_labels': self.collected_labels.clone(),
             'fc_weight': self.fc.weight.data.clone(),
-            'experts_weight': [expert.weight.data.clone() for expert in self.experts],
-            'expert_mask': self.expert_mask.clone()
         }
         return saved_state
-    
+
     def restore_classifier_state(self, saved_state):
         self.Q = saved_state['Q']
         self.G = saved_state['G']
         self.collected_features = saved_state['collected_features']
         self.collected_labels = saved_state['collected_labels']
         self.fc.weight.data = saved_state['fc_weight']
-        for i, expert in enumerate(self.experts):
-            expert.weight.data = saved_state['experts_weight'][i]
-        self.expert_mask = saved_state['expert_mask']
 
     def forward_rp_features(self, x):
         if self.use_RP and self.rp_initialized:
@@ -214,48 +257,13 @@ class MoERanPACClassifier(nn.Module):
         return x
 
     def forward_rp_head(self, x):
-        if self.use_RP and self.rp_initialized:
-            expert_outputs = []
-            for e in range(self.num_experts):
-                expert_outputs.append(self.experts[e](x[:, self.expert_mask[e]]))
-
-            # naive average
-            expert_outputs = torch.stack(expert_outputs, dim=1)
-            output = expert_outputs.mean(dim=1)
-
-            # # confidence-based average
-            # expert_outputs = torch.stack(expert_outputs, dim=1)  # [B, num_experts, num_classes]
-            # confidences = torch.softmax(expert_outputs, dim=-1).max(dim=-1).values  # [B, num_experts]
-            # confidence_sum = confidences.sum(dim=1, keepdim=True) + 1e-8
-            # weights = confidences / confidence_sum  # [B, num_experts]
-            # output = (expert_outputs * weights.unsqueeze(-1)).sum(dim=1)
-
-            # # max_logit here
-            # expert_outputs = torch.stack(expert_outputs, dim=1)  # [B, num_experts, num_classes]
-            # max_logits = expert_outputs.max(dim=-1).values  # [B, num_experts] - max logit per expert per sample
-            # best_expert_indices = max_logits.argmax(dim=1)  # [B] - index of expert with highest max logit
-            # batch_size = expert_outputs.size(0)
-            # batch_indices = torch.arange(batch_size, device=expert_outputs.device)
-            # output = expert_outputs[batch_indices, best_expert_indices]  # [B, num_classes]
-
-            # TODO: try other aggregation methods
-            return output
-        else:
-            return self.fc(x)
+        return self.fc(x)
 
     def forward(self, x):
         x = self.forward_rp_features(x)
         x = self.forward_rp_head(x)
         return x
-    
-    def forward_experts(self, x):
-        # save test results for analysis
-        x = self.forward_rp_features(x)
-        expert_outputs = []
-        for e in range(self.num_experts):
-            expert_outputs.append(self.experts[e](x[:, self.expert_mask[e]]))
-        expert_outputs = torch.stack(expert_outputs, dim=1)
-        return expert_outputs
+
 
 class MoERanPAC(nn.Module):
     def __init__(self,
@@ -265,12 +273,10 @@ class MoERanPAC(nn.Module):
                  ranpac_M       : int   = 10000,
                  ranpac_use_RP  : bool  = True,
                  backbone_name  : str   = None,
-                 use_g_prompt   : bool  = False,
-                 pos_g_prompt   : list  = [0, 1, 2, 3, 4],
-                 len_g_prompt   : int   = 5,
-                 g_pool         : int   = 1,
-                 num_experts    : int   = 5,
-                 expert_dim     : int   = 2000,
+                 use_lora       : bool  = True,
+                 lora_rank      : int   = 64,
+                 lora_alpha     : float = 1.0,
+                 merge_lora     : bool  = True,
                  **kwargs):
 
         super().__init__()
@@ -281,11 +287,10 @@ class MoERanPAC(nn.Module):
         self.task_num       = task_num
         self.num_classes    = num_classes
         self.adapter_dim    = adapter_dim
-        self.use_g_prompt   = use_g_prompt
-        self.len_g_prompt   = len_g_prompt
-        self.g_length       = len(pos_g_prompt) if pos_g_prompt else 0
-        self.num_experts    = num_experts
-        self.expert_dim     = expert_dim
+        self.use_lora       = use_lora
+        self.lora_rank      = lora_rank
+        self.lora_alpha     = lora_alpha
+        self.merge_lora     = merge_lora
 
         self.task_count = 0
 
@@ -295,19 +300,20 @@ class MoERanPAC(nn.Module):
         for name, param in self.backbone.named_parameters():
             param.requires_grad = False
 
-        if self.use_g_prompt:
-            # G-prompt setup
-            self.register_buffer('pos_g_prompt', torch.tensor(pos_g_prompt, dtype=torch.int64))
-            
-            self.g_prompt = Prompt(
-                g_pool, 1, self.g_length * self.len_g_prompt, self.backbone.num_features, 
-                _batchwise_selection=False, _diversed_selection=False, kwargs=self.kwargs
-            )
-            self.g_prompt.key = None  # No key selection for g-prompt
-            
-            logger.info(f"G-prompt initialized at positions {pos_g_prompt} with length {len_g_prompt}")
+        if self.use_lora:
+            # Apply LoRA to attention layers
+            self.lora_attentions = []
+            for name, module in self.backbone.named_modules():
+                if isinstance(module, vit.Block):
+                    # Replace attention with LoRA attention
+                    original_attn = module.attn
+                    lora_attn = LoRAAttention(original_attn, self.lora_rank, self.lora_alpha)
+                    module.attn = lora_attn
+                    self.lora_attentions.append(lora_attn)
+
+            logger.info(f"LoRA applied to {len(self.lora_attentions)} attention layers with rank={self.lora_rank}, alpha={self.lora_alpha}")
         else:
-            # Insert adapter with mlp to each block (existing logic)
+            # Insert adapter with mlp to each block
             for name, module in self.backbone.named_modules():
                 if isinstance(module, vit.Block):
                     module.adapter = Adapter(
@@ -325,9 +331,9 @@ class MoERanPAC(nn.Module):
                             x = adapt_x + mlp_x + residual
                             return x
                         return forward_with_adapter
-                    
+
                     module.forward = create_forward_with_adapter(module)
-            
+
             logger.info("Adapters initialized in all transformer blocks")
 
         self.classifier = MoERanPACClassifier(
@@ -335,61 +341,18 @@ class MoERanPAC(nn.Module):
             num_classes=num_classes,
             use_RP=ranpac_use_RP,
             M=ranpac_M,
-            num_experts=num_experts,
-            expert_dim=expert_dim,
         )
-
-    def prompt_tuning(self,
-                      x        : torch.Tensor,
-                      g_prompt : torch.Tensor,
-                      **kwargs):
-        """G-prompt tuning similar to DualPrompt"""
-        B, N, C = x.size()
-        g_prompt = g_prompt.contiguous().view(B, self.g_length, self.len_g_prompt, C)
-        g_prompt = g_prompt + self.backbone.pos_embed[:,:1,:].unsqueeze(1).expand(B, self.g_length, self.len_g_prompt, C)
-
-        for n, block in enumerate(self.backbone.blocks):
-            pos_g = ((self.pos_g_prompt.eq(n)).nonzero()).squeeze()
-            if pos_g.numel() != 0:
-                x = torch.cat((x, g_prompt[:, pos_g]), dim = 1)
-            x = block(x)
-            x = x[:, :N, :]
-        return x
 
     def forward(self, inputs : torch.Tensor, **kwargs) -> torch.Tensor:
         x = self.forward_features(inputs)
         x = self.forward_head(x)
         return x
     
-    def forward_experts(self, inputs : torch.Tensor, **kwargs) -> torch.Tensor:
-        x = self.forward_features(inputs)
-        x = self.classifier.forward_experts(x)
-        return x
-    
     def forward_features(self, x):
-        if self.use_g_prompt:
-            # G-prompt forward pass
-            x = self.backbone.patch_embed(x)
-            B, N, D = x.size()
-
-            cls_token = self.backbone.cls_token.expand(B, -1, -1)
-            token_appended = torch.cat((cls_token, x), dim=1)
-            x = self.backbone.pos_drop(token_appended + self.backbone.pos_embed)
-
-            # Get g_prompt (no query needed for task-agnostic prompts)
-            g_p = self.g_prompt.prompts[0]
-            g_p = g_p.expand(B, -1, -1)
-
-            # Apply prompt tuning
-            x = self.prompt_tuning(x, g_p)
-            x = self.backbone.norm(x)
-            cls_token = x[:, 0]
-            return cls_token
-        else:
-            # Adapter forward pass (existing logic)
-            x = self.backbone.forward_features(x)
-            x = x[:, 0] # CLS token
-            return x
+        # Forward pass
+        x = self.backbone.forward_features(x)
+        x = x[:, 0] # CLS token
+        return x
 
     def forward_head(self, x):
         x = self.classifier(x)
@@ -414,7 +377,7 @@ class MoERanPAC(nn.Module):
 
     def freeze_backbone_except_adapters(self):
         """Freeze backbone except adapters (for adapter mode)"""
-        if not self.use_g_prompt:
+        if not self.use_lora:
             for name, param in self.backbone.named_parameters():
                 param.requires_grad = False
             for name, module in self.backbone.named_modules():
@@ -424,22 +387,41 @@ class MoERanPAC(nn.Module):
         for param in self.classifier.parameters():
             param.requires_grad = True
 
-    def freeze_backbone_except_prompts(self):
-        """Freeze backbone except g-prompts (for g-prompt mode)"""
-        if self.use_g_prompt:
+    def freeze_backbone_except_lora(self):
+        """Freeze backbone except LoRA parameters (for LoRA mode)"""
+        if self.use_lora:
             for name, param in self.backbone.named_parameters():
                 param.requires_grad = False
-            for param in self.g_prompt.parameters():
-                param.requires_grad = True
+            # Enable LoRA parameters
+            for lora_attn in self.lora_attentions:
+                for param in lora_attn.lora_k.parameters():
+                    param.requires_grad = True
+                for param in lora_attn.lora_v.parameters():
+                    param.requires_grad = True
         for param in self.classifier.parameters():
             param.requires_grad = True
 
+    def merge_lora_weights(self):
+        """Merge LoRA weights into the original model weights"""
+        if not self.use_lora:
+            logger.warning("merge_lora_weights called but use_lora=False")
+            return
+
+        if not self.merge_lora:
+            logger.info("LoRA merging disabled by merge_lora=False, keeping LoRA parameters separate")
+            return
+
+        for lora_attn in self.lora_attentions:
+            lora_attn.merge_lora_weights()
+        logger.info("All LoRA weights merged into backbone")
+
     def freeze_all_except_classifier(self):
+        """Freeze all parameters except classifier parameters"""
         for name, param in self.named_parameters():
-            if 'classifier.fc' not in name:
+            if 'classifier' not in name:
                 param.requires_grad = False
-        for param in self.classifier.fc.parameters():
-            param.requires_grad = False
+            else:
+                param.requires_grad = True
 
     def save_classifier_state(self):
         return self.classifier.save_classifier_state()
