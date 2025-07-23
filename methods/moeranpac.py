@@ -169,15 +169,7 @@ class MoERanPAC(_Trainer):
         cls_acc = (correct_l / (num_data_l + 1e-5)).numpy().tolist()
 
         eval_dict = {"avg_loss": avg_loss, "avg_acc": avg_acc, "cls_acc": cls_acc}
-
-        if task_id == 4 and end:
-            self.save_final_task_results(test_loader)
-
         return eval_dict
-    
-    def save_final_task_results(self, test_loader):
-        # This method is no longer needed since we removed expert outputs
-        pass
 
     def online_before_task(self, task_id):
         if task_id == 0:
@@ -218,6 +210,7 @@ class MoERanPAC(_Trainer):
                     else:
                         logger.info("LoRA weights kept separate for comparison")
                 self.model.freeze_all_except_classifier()
+                self.model.update_statistics_and_classifier()
             else:
                 self.model.module.setup_rp()
                 # Merge LoRA weights if using LoRA and merging is enabled
@@ -228,6 +221,7 @@ class MoERanPAC(_Trainer):
                     else:
                         logger.info("LoRA weights kept separate for comparison")
                 self.model.module.freeze_all_except_classifier()
+                self.model.module.update_statistics_and_classifier()
 
             self.first_task_completed = True
             mode = "LoRA" if (self.model.use_lora if not self.distributed else self.model.module.use_lora) else "adapters"

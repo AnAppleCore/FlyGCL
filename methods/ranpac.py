@@ -205,9 +205,11 @@ class RanPAC(_Trainer):
             if not self.distributed:
                 self.model.setup_rp()
                 self.model.freeze_all_except_classifier()
+                self.model.update_statistics_and_classifier()
             else:
                 self.model.module.setup_rp()
                 self.model.module.freeze_all_except_classifier()
+                self.model.module.update_statistics_and_classifier()
 
             self.first_task_completed = True
             logger.info("Random projection initialized, adapters frozen")

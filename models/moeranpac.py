@@ -188,7 +188,6 @@ class MoERanPACClassifier(nn.Module):
             losses.append(F.mse_loss(Y_train_pred, Y[num_val_samples::, :]))
 
         ridge = ridges[np.argmin(np.array(losses))]
-        logger.info(f"Optimal ridge parameter: {ridge}")
         return ridge
 
     def update_statistics_and_classifier(self):
@@ -229,7 +228,7 @@ class MoERanPACClassifier(nn.Module):
             # Update classifier weights
             device = self.fc.weight.device
             self.fc.weight.data = Wo.to(device)
-            logger.info("Classifier weights updated using RanPAC statistics")
+            logger.info(f"Classifier weights updated using optimal ridge {ridge}")
 
         # Clear collected data for next task
         self.clear_collected_data()
