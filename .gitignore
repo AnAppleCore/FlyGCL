@@ -164,9 +164,11 @@ cython_debug/
 data/
 logs/
 materials/
+playground/
 results/
 
 materials
+playground
 results
 
 *.ipynb

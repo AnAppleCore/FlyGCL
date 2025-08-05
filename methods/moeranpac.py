@@ -54,10 +54,7 @@ class MoERanPAC(_Trainer):
 
         with torch.no_grad():
             self.model.eval()
-            if self.distributed:
-                self.model.module.collect_features_labels(images_copy, labels_copy)
-            else:
-                self.model.collect_features_labels(images_copy, labels_copy)
+            self.model_without_ddp.collect_features_labels(images_copy, labels_copy)
 
         del images_copy, labels_copy
         gc.collect()
@@ -120,16 +117,10 @@ class MoERanPAC(_Trainer):
         label = []
 
         if not end and self.task_id > 0:
-            if self.distributed:
-                saved_state = self.model.module.save_classifier_state()
-            else:
-                saved_state = self.model.save_classifier_state()
+            saved_state = self.model_without_ddp.save_classifier_state()
 
         if self.task_id > 0 and self.first_task_completed:
-            if self.distributed:
-                self.model.module.update_statistics_and_classifier()
-            else:
-                self.model.update_statistics_and_classifier()
+            self.model_without_ddp.update_statistics_and_classifier()
 
         self.model.eval()
         with torch.no_grad():
@@ -159,10 +150,7 @@ class MoERanPAC(_Trainer):
                 label += y.tolist()
 
         if not end and self.task_id > 0:
-            if self.distributed:
-                self.model.module.restore_classifier_state(saved_state)
-            else:
-                self.model.restore_classifier_state(saved_state)
+            self.model_without_ddp.restore_classifier_state(saved_state)
 
         avg_acc = total_correct / total_num_data
         avg_loss = total_loss / len(test_loader)
@@ -173,64 +161,33 @@ class MoERanPAC(_Trainer):
 
     def online_before_task(self, task_id):
         if task_id == 0:
-            if not self.distributed:
-                if self.model.use_lora:
-                    self.model.freeze_backbone_except_lora()
-                    logger.info("First task: LoRA and classifier enabled for training")
-                else:
-                    self.model.freeze_backbone_except_adapters()
-                    logger.info("First task: adapters and classifier enabled for training")
+            if self.model_without_ddp.use_lora:
+                self.model_without_ddp.freeze_backbone_except_lora()
+                logger.info("First task: LoRA and classifier enabled for training")
             else:
-                if self.model.module.use_lora:
-                    self.model.module.freeze_backbone_except_lora()
-                    logger.info("First task: LoRA and classifier enabled for training")
-                else:
-                    self.model.module.freeze_backbone_except_adapters()
-                    logger.info("First task: adapters and classifier enabled for training")
+                self.model_without_ddp.freeze_backbone_except_adapters()
+                logger.info("First task: adapters and classifier enabled for training")
         else:
-            if not self.distributed:
-                self.model.freeze_all_except_classifier()
-            else:
-                self.model.module.freeze_all_except_classifier()
+            self.model_without_ddp.freeze_all_except_classifier()
 
-            mode = "LoRA" if (self.model.use_lora if not self.distributed else self.model.module.use_lora) else "adapter"
+            mode = "LoRA" if self.model_without_ddp.use_lora else "adapter"
             logger.info(f"Task {task_id} ({mode} mode): collecting features for RanPAC statistics")
 
     def online_after_task(self, cur_iter):
         if self.task_id == 0:
             logger.info("Completing first task training, setting up random projection")
 
-            if not self.distributed:
-                self.model.setup_rp()
-                # Merge LoRA weights if using LoRA and merging is enabled
-                if self.model.use_lora:
-                    self.model.merge_lora_weights()
-                    if self.model.merge_lora:
-                        logger.info("LoRA weights merged, no additional parameters needed")
-                    else:
-                        logger.info("LoRA weights kept separate for comparison")
-                self.model.freeze_all_except_classifier()
-                self.model.update_statistics_and_classifier()
-            else:
-                self.model.module.setup_rp()
-                # Merge LoRA weights if using LoRA and merging is enabled
-                if self.model.module.use_lora:
-                    self.model.module.merge_lora_weights()
-                    if self.model.module.merge_lora:
-                        logger.info("LoRA weights merged, no additional parameters needed")
-                    else:
-                        logger.info("LoRA weights kept separate for comparison")
-                self.model.module.freeze_all_except_classifier()
-                self.model.module.update_statistics_and_classifier()
+            self.model_without_ddp.setup_rp()
+            if self.model_without_ddp.use_lora:
+                self.model_without_ddp.merge_lora_weights()
+            self.model_without_ddp.freeze_all_except_classifier()
+            self.model_without_ddp.update_statistics_and_classifier()
 
             self.first_task_completed = True
-            mode = "LoRA" if (self.model.use_lora if not self.distributed else self.model.module.use_lora) else "adapters"
+            mode = "LoRA" if self.model_without_ddp.use_lora else "adapters"
             logger.info(f"Random projection initialized, {mode} processed")
 
-        if not self.distributed:
-            self.model.process_task_count()
-        else:
-            self.model.module.process_task_count()
+        self.model_without_ddp.process_task_count()
 
         logger.info(f"Task {self.task_id} completed, statistics updated")
         self.task_id += 1

@@ -108,8 +108,6 @@ class LoRAAttention(nn.Module):
             # Mark as merged
             self.lora_merged = True
 
-        logger.info("LoRA weights merged into attention layer")
-
 
 class MoERanPACClassifier(nn.Module):
     def __init__(self,
@@ -222,7 +220,8 @@ class MoERanPACClassifier(nn.Module):
 
         # Optimize ridge parameter and compute classifier weights
         if features_h.size(0) > 1:  # Need at least 2 samples for cross-validation
-            ridge = self.optimise_ridge_parameter(features_h, Y)
+            # ridge = self.optimise_ridge_parameter(features_h, Y)
+            ridge = 1e4
             Wo = torch.linalg.solve(G_cpu + ridge * torch.eye(G_cpu.size(dim=0)), Q_cpu).T
 
             # Update classifier weights
