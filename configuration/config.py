@@ -40,6 +40,8 @@ def base_parser():
     # ========== Evaluation configuration ==========
     parser.add_argument("--topk", type=int, default=1, help="set k when we want to set topk accuracy")
     parser.add_argument("--eval_period", type=int, default=100, help="evaluation period for true online setup")
+    parser.add_argument("--oracle_eval", action="store_true", default=False,
+                        help="Enable oracle multi-head evaluation after all tasks are trained.")
 
     # ============= ViT configurations =============
     parser.add_argument('--profile', action='store_true', default=False, help='enable profiling for ViT_Prompt')

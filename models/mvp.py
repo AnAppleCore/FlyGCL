@@ -80,7 +80,7 @@ class MVP(nn.Module):
             self.e_size = 2 * self.e_length * self.len_e_prompt
             self.g_prompts = nn.Parameter(torch.randn(g_pool, self.g_size, self.backbone.embed_dim))
             self.e_prompts = nn.Parameter(torch.randn(e_pool, self.e_size, self.backbone.embed_dim))
-    
+
     def prompt_tuning(self,
                       x        : torch.Tensor,
                       g_prompt : torch.Tensor,
@@ -127,11 +127,11 @@ class MVP(nn.Module):
             if pos_e.numel() != 0:
                 xk = torch.cat((xk, e_prompt[:, pos_e * 2 + 0].clone()), dim = 1)
                 xv = torch.cat((xv, e_prompt[:, pos_e * 2 + 1].clone()), dim = 1)
-            
+
             attn   = block.attn
             weight = attn.qkv.weight
             bias   = attn.qkv.bias
-            
+
             B, N, C = xq.shape
             xq = F.linear(xq, weight[:C   ,:], bias[:C   ]).reshape(B,  N, attn.num_heads, C // attn.num_heads).permute(0, 2, 1, 3)
             _B, _N, _C = xk.shape
@@ -176,7 +176,7 @@ class MVP(nn.Module):
         distance = distance[torch.arange(topk.size(0), device=topk.device).unsqueeze(1).repeat(1,self.selection_size), topk].squeeze().clone()
         e_prompts = self.e_prompts[topk].squeeze().clone()
         mask = self.learnable_mask[topk].mean(1).squeeze().clone()
-        
+
         if self.use_contrastiv:
             key_wise_distance = 1 - F.cosine_similarity(self.learnable_key.unsqueeze(1), self.learnable_key, dim=-1)
             self.similarity_loss = -((key_wise_distance[topk] / mass[topk]).exp().mean() / ((distance / mass[topk]).exp().mean() + (key_wise_distance[topk] / mass[topk]).exp().mean()) + 1e-6).log()
@@ -206,6 +206,44 @@ class MVP(nn.Module):
             x = x * mask
         return x
 
+    def forward_with_task(self, inputs: torch.Tensor, task_id: int, **kwargs) -> torch.Tensor:
+        """Forward using the expert prompt corresponding to a specific task id.
+
+        This bypasses the routing via learnable keys and directly uses
+        `e_prompts[task_id]` for all samples in the batch. Used only for
+        oracle evaluation.
+        """
+        self.backbone.eval()
+        with torch.no_grad():
+            x = self.backbone.patch_embed(inputs)
+            B, N, D = x.size()
+
+            cls_token = self.backbone.cls_token.expand(B, -1, -1)
+            token_appended = torch.cat((cls_token, x), dim=1)
+            x = self.backbone.pos_drop(token_appended + self.backbone.pos_embed)
+            query = x.clone()
+            for n, block in enumerate(self.backbone.blocks):
+                if n == len(self.backbone.blocks) - 1 and not self.use_last_layer:
+                    break
+                query = block(query)
+            query = query[:, 0]
+
+        # build prompts for the given task id
+        topk = torch.full((B, self.selection_size), int(task_id), device=inputs.device, dtype=torch.long)
+        e_prompts = self.e_prompts[topk].squeeze().clone()
+        mask = self.learnable_mask[topk].mean(1).squeeze().clone()
+        g_prompts = self.g_prompts[0].repeat(B, 1, 1)
+
+        x = self.prompt_func(self.backbone.pos_drop(token_appended + self.backbone.pos_embed), g_prompts, e_prompts)
+        feature = self.backbone.norm(x)[:, 0]
+        mask = torch.sigmoid(mask) * 2.0
+
+        logits = self.forward_head(feature, **kwargs)
+        if self.use_mask:
+            logits = logits * mask
+        return logits
+
+
     def loss_fn(self, output, target):
         return F.cross_entropy(output, target) + self.similarity_loss
 
@@ -214,6 +252,6 @@ class MVP(nn.Module):
 
     def get_e_prompt_count(self):
         return self.count
-    
+
     def process_task_count(self):
         self.task_count += 1

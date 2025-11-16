@@ -15,6 +15,7 @@ class FlyPrompt(_Trainer):
 
         self.task_id = 0
         self.label_to_task: Dict[int, set] = {}
+        self.head_snapshots = []
 
     def online_step(self, images, labels, idx):
         self.add_new_class(labels)
@@ -32,7 +33,7 @@ class FlyPrompt(_Trainer):
         del images, labels
         gc.collect()
         return _loss / _iter, _acc / _iter
-    
+
     def collect(self, images, labels):
         for j in range(len(labels)):
             labels[j] = self.exposed_classes.index(labels[j].item())
@@ -156,9 +157,91 @@ class FlyPrompt(_Trainer):
         avg_acc = total_correct / total_num_data
         avg_loss = total_loss / len(test_loader)
         cls_acc = (correct_l / (num_data_l + 1e-5)).numpy().tolist()
-        
+
         eval_dict = {"avg_loss": avg_loss, "avg_acc": avg_acc, "cls_acc": cls_acc}
         return eval_dict
+
+    def oracle_evaluate(self, test_loader):
+        """Oracle multi-task evaluation for FlyPrompt.
+
+        For each class c we use up to the first two task ids where c has
+        appeared during training. For a test sample, if any of those
+        (prompt_t + g_t + EMA heads) combinations predicts correctly, it
+        is counted as correct.
+        """
+        self.model_without_ddp.update()
+        self.model.eval()
+
+        total_correct, total_num_data = 0.0, 0.0
+        total_loss = 0.0
+        correct_l = torch.zeros(self.n_classes)
+        num_data_l = torch.zeros(self.n_classes)
+
+        with torch.no_grad():
+            for data in test_loader:
+                x, y = data
+                for j in range(len(y)):
+                    y[j] = self.exposed_classes.index(y[j].item())
+
+                x = x.to(self.device)
+                y = y.to(self.device)
+
+                batch_size = y.size(0)
+                hit = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+
+                task_to_indices = {}
+                for idx_in_batch in range(batch_size):
+                    cls = int(y[idx_in_batch].item())
+                    tasks = sorted(list(self.label_to_task.get(cls, [])))
+                    if len(tasks) == 0:
+                        continue
+                    if len(tasks) > 2:
+                        tasks = tasks[:2]
+                    for t in tasks:
+                        task_to_indices.setdefault(t, []).append(idx_in_batch)
+
+                for t, indices in task_to_indices.items():
+                    idx_tensor = torch.tensor(indices, device=self.device, dtype=torch.long)
+                    x_sub = x[idx_tensor]
+                    y_sub = y[idx_tensor]
+
+                    # load snapshot of online head at task t
+                    head = self.model_without_ddp.backbone.fc
+                    snapshot = self.head_snapshots[t]
+                    head.weight.data.copy_(snapshot["weight"].to(head.weight.device))
+                    head.bias.data.copy_(snapshot["bias"].to(head.bias.device))
+
+                    expert_ids = torch.full((x_sub.size(0),), t, device=self.device, dtype=torch.long)
+                    logit_ls = self.model_without_ddp.forward_with_ema(x_sub, expert_ids=expert_ids)
+                    logit_ls = [logit + self.mask for logit in logit_ls]
+                    logit = self._ensemble_logits(logit_ls)
+
+                    loss = self.criterion(logit, y_sub)
+                    pred_sub = torch.argmax(logit, dim=-1)
+                    correct_sub = (pred_sub == y_sub)
+                    hit[idx_tensor] |= correct_sub
+
+                    total_loss += loss.item()
+
+                total_correct += hit.sum().item()
+                total_num_data += batch_size
+
+                pred_full = y.clone()
+                wrong_mask = ~hit
+                if wrong_mask.any():
+                    tmp = pred_full[wrong_mask].clone()
+                    num_classes = len(self.exposed_classes)
+                    pred_full[wrong_mask] = (tmp + 1) % max(num_classes, 2)
+
+                xlabel_cnt, correct_xlabel_cnt = self._interpret_pred(y, pred_full)
+                correct_l += correct_xlabel_cnt.detach().cpu()
+                num_data_l += xlabel_cnt.detach().cpu()
+
+        avg_acc = total_correct / max(total_num_data, 1.0)
+        avg_loss = total_loss / max(total_num_data, 1.0)
+        cls_acc = (correct_l / (num_data_l + 1e-5)).numpy().tolist()
+
+        return {"avg_loss": avg_loss, "avg_acc": avg_acc, "cls_acc": cls_acc}
 
     def _ensemble_logits(self, logit_ls):
         if not hasattr(self, 'ensemble_method'):
@@ -184,6 +267,14 @@ class FlyPrompt(_Trainer):
     def online_before_task(self, task_id):
         pass
 
+
     def online_after_task(self, cur_iter):
+        # snapshot current classifier head g_t (online head)
+        head = self.model_without_ddp.backbone.fc
+        self.head_snapshots.append({
+            "weight": head.weight.detach().cpu().clone(),
+            "bias": head.bias.detach().cpu().clone(),
+        })
+
         self.model_without_ddp.process_task_count()
         self.task_id += 1

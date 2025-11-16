@@ -274,6 +274,35 @@ class _Trainer():
             logger.info("[2-5] Report task result")
             logger.info(task_records['task_acc'])
 
+        # Optional oracle evaluation after all tasks are trained
+        if getattr(self, "oracle_eval", False) and hasattr(self, "oracle_evaluate"):
+            test_sampler = OnlineTestSampler(self.test_dataset, self.exposed_classes)
+            test_loader = torch.utils.data.DataLoader(
+                self.test_dataset,
+                batch_size=self.batchsize * 2,
+                sampler=test_sampler,
+                num_workers=self.n_worker,
+                pin_memory=True,
+            )
+            oracle_dict = self.oracle_evaluate(test_loader)
+            if self.distributed:
+                oracle_tensor = torch.tensor(
+                    [oracle_dict['avg_loss'], oracle_dict['avg_acc'], *oracle_dict['cls_acc']],
+                    device=self.device,
+                )
+                dist.reduce(oracle_tensor, dst=0, op=dist.ReduceOp.SUM)
+                oracle_tensor = oracle_tensor.cpu().numpy()
+                oracle_dict = {
+                    'avg_loss': oracle_tensor[0] / self.world_size,
+                    'avg_acc': oracle_tensor[1] / self.world_size,
+                    'cls_acc': oracle_tensor[2:] / self.world_size,
+                }
+            if self.is_main_process():
+                logger.info("[Oracle] avg_loss: %.4f, avg_acc: %.4f" % (oracle_dict['avg_loss'], oracle_dict['avg_acc']))
+                logger.info("[Oracle] cls_acc: " + np.array2string(np.array(oracle_dict['cls_acc']), precision=4))
+                # cache oracle avg_acc to optionally override A_last in summary
+                self.oracle_avg_acc = oracle_dict['avg_acc']
+
         # ================== Summary ===================
         if self.is_main_process():
 
@@ -281,6 +310,9 @@ class _Trainer():
             A_auc = np.mean(eval_results["test_acc"])
             A_avg = np.mean(task_records["task_acc"])
             A_last = task_records["task_acc"][self.n_tasks - 1]
+            # Optionally replace A_last with oracle evaluation result
+            if getattr(self, "oracle_eval", False) and hasattr(self, "oracle_avg_acc"):
+                A_last = self.oracle_avg_acc
 
             # Forgetting (F)
             cls_acc = np.array(task_records["cls_acc"])
@@ -318,7 +350,7 @@ class _Trainer():
             logger.info(f"="*24)
             logger.info(f"BWT_last {BWT_last}")
             logger.info(eval_results['test_acc'])
-        
+
             np.save(f"{self.log_dir}/seed_{self.rnd_seed}.npy", task_records["task_acc"])
 
             if self.eval_period != np.inf:
