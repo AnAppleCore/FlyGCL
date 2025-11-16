@@ -77,6 +77,17 @@ class FlyPrompt(_Trainer):
         else:
             logit, loss = self.model_forward(x,y)
 
+        # Optional MLP-based routing head training (independent from prompt branch)
+        routing_mode = getattr(self.model_without_ddp, "routing_mode", "rpfc")
+        if routing_mode == "mlp" and getattr(self.model_without_ddp, "router_mlp", None) is not None:
+            with torch.no_grad():
+                cls_features = self.model_without_ddp._forward_backbone_cls(x)
+                rp_features = self.model_without_ddp._get_rp_features(cls_features)
+            logits_gate = self.model_without_ddp.router_mlp(rp_features.detach())
+            task_labels = torch.full((x.size(0),), self.task_id, device=self.device, dtype=torch.long)
+            loss_gate = self.criterion(logits_gate, task_labels)
+            loss = loss + loss_gate
+
         _, preds = logit.topk(self.topk, 1, True, True)
 
         self.scaler.scale(loss).backward()
@@ -122,9 +133,8 @@ class FlyPrompt(_Trainer):
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                # use RP head to get expert_ids
-                logit_raw = self.model_without_ddp.forward_with_rp(x)
-                expert_ids = torch.argmax(logit_raw, dim=-1)
+                # use routing function (RPFC / random / KNN / NB / MLP) to get expert_ids
+                expert_ids = self.model_without_ddp.route_experts(x, end=end)
                 logit_ls = self.model_without_ddp.forward_with_ema(x, expert_ids=expert_ids)
 
                 logit_ls = [logit + self.mask for logit in logit_ls]

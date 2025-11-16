@@ -55,6 +55,12 @@ def base_parser():
     parser.add_argument("--ema_ratio", type=float, nargs="+", default=[0.9, 0.99], help="The EMA ratio for the expert FCs")
     parser.add_argument("--ensemble_method", type=str, default="softmax_max_prob", choices=["mean", "max_prob", "min_entropy", "softmax_mean", "softmax_max_prob", "softmax_min_entropy"],
                         help="Ensemble method for combining expert outputs: mean (average), max (maximum), min_entropy (minimum entropy), and softmax variants of these.")
+    parser.add_argument("--routing_mode", type=str, default="rpfc", choices=["rpfc", "random", "knn", "nb", "mlp"],
+                        help="Routing strategy used to select task experts in FlyPrompt.")
+    parser.add_argument("--routing_mlp_hidden_dim", type=int, default=512,
+                        help="Hidden dimension of two-layer MLP router when routing_mode is 'mlp'.")
+    parser.add_argument("--routing_mlp_dropout", type=float, default=0.1,
+                        help="Dropout rate of the two-layer MLP router when routing_mode is 'mlp'.")
 
     args = parser.parse_args()
     return args

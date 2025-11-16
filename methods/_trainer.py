@@ -285,17 +285,38 @@ class _Trainer():
             # Forgetting (F)
             cls_acc = np.array(task_records["cls_acc"])
             acc_diff = []
-            if self.n_tasks >1:
+            if self.n_tasks > 1:
                 for j in range(self.n_classes):
                     if np.max(cls_acc[:-1, j]) > 0:
                         acc_diff.append(np.max(cls_acc[:-1, j]) - cls_acc[-1, j])
                 F_last = np.mean(acc_diff)
             else:
                 F_last = -999
+
+            # Backward Transfer (BWT), class-level: last accuracy minus accuracy
+            # when the class was first learned (first non-zero accuracy before last task)
+            if self.n_tasks > 1:
+                bwt_vals = []
+                for j in range(self.n_classes):
+                    per_cls_prev = cls_acc[:-1, j]
+                    seen_indices = np.where(per_cls_prev > 0)[0]
+                    if len(seen_indices) == 0:
+                        continue
+                    first_acc = per_cls_prev[seen_indices[0]]
+                    last_acc = cls_acc[-1, j]
+                    bwt_vals.append(last_acc - first_acc)
+                if len(bwt_vals) > 0:
+                    BWT_last = np.mean(bwt_vals)
+                else:
+                    BWT_last = -999
+            else:
+                BWT_last = -999
+
             logger.info(f"======== Summary =======")
             logger.info(self.note)
             logger.info(f"A_auc {A_auc} | A_avg {A_avg} | A_last {A_last} | F_last {F_last}")
             logger.info(f"="*24)
+            logger.info(f"BWT_last {BWT_last}")
             logger.info(eval_results['test_acc'])
         
             np.save(f"{self.log_dir}/seed_{self.rnd_seed}.npy", task_records["task_acc"])

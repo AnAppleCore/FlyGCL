@@ -81,7 +81,7 @@ class RPFC(nn.Module):
                  **kwargs):
 
         super().__init__()
-        
+
         self.ridge = ridge
         self.embed_dim = embed_dim
         self.num_classes = num_classes
@@ -160,6 +160,24 @@ class FlyPrompt(nn.Module):
 
         self.task_count = 0
 
+        # Routing configuration
+        self.routing_mode = self.kwargs.get("routing_mode", "rpfc")
+        self.routing_mlp_hidden_dim = self.kwargs.get("routing_mlp_hidden_dim", 512)
+        self.routing_mlp_dropout = self.kwargs.get("routing_mlp_dropout", 0.1)
+
+        # KNN routing buffers
+        self.knn_max_samples = 1000
+        self.knn_num_centers = 5
+        self.knn_max_iters = 10
+        self.knn_current_features = []
+        self.knn_current_count = 0
+        self.knn_task_prototypes = {}
+
+        # Gaussian Naive Bayes statistics (lazy initialization)
+        self.nb_class_count = None
+        self.nb_sum = None
+        self.nb_sum_sq = None
+
         # Backbone
         assert backbone_name is not None, 'backbone_name must be specified'
         self.add_module('backbone', timm.create_model(backbone_name, pretrained=True, num_classes=num_classes))
@@ -197,19 +215,129 @@ class FlyPrompt(nn.Module):
             num_classes = self.task_num,
         )
 
+        # Two-layer MLP router for task inference (independent branch)
+        if self.routing_mode == "mlp":
+            rp_feature_dim = self.rp_head.M
+            self.router_mlp = nn.Sequential(
+                nn.Linear(rp_feature_dim, self.routing_mlp_hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(self.routing_mlp_dropout),
+                nn.Linear(self.routing_mlp_hidden_dim, self.task_num),
+            )
+        else:
+            self.router_mlp = None
+
+    def _forward_backbone_cls(self, inputs: torch.Tensor) -> torch.Tensor:
+        x = self.backbone.forward_features(inputs)
+        return x[:, 0]
+
+    def _get_rp_features(self, cls_features: torch.Tensor) -> torch.Tensor:
+        if getattr(self.rp_head, "use_rp", False):
+            return F.relu(cls_features @ self.rp_head.W_rand)
+        return cls_features
+
+    def _update_knn_buffer(self, rp_features: torch.Tensor):
+        if self.routing_mode != "knn" or self.knn_max_samples <= 0:
+            return
+        with torch.no_grad():
+            feats = rp_features.detach().cpu()
+            num_new = feats.size(0)
+            if num_new == 0:
+                return
+            remaining = self.knn_max_samples - self.knn_current_count
+            if remaining <= 0:
+                return
+            if num_new > remaining:
+                idx = torch.randperm(num_new)[:remaining]
+                feats = feats[idx]
+                num_new = remaining
+            self.knn_current_features.append(feats)
+            self.knn_current_count += num_new
+
+    @torch.no_grad()
+    def _compute_knn_prototypes_from_current(self) -> torch.Tensor:
+        if len(self.knn_current_features) == 0:
+            return None
+        feats = torch.cat(self.knn_current_features, dim=0)
+        if feats.numel() == 0:
+            return None
+        # L2-normalize features
+        feats = feats / (feats.norm(dim=1, keepdim=True) + 1e-6)
+        if feats.size(0) <= self.knn_num_centers:
+            centers = feats.clone()
+        else:
+            k = min(self.knn_num_centers, feats.size(0))
+            try:
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=k, random_state=0).fit(feats.numpy())
+                centers = torch.from_numpy(kmeans.cluster_centers_).float()
+            except Exception:
+                centers = self._torch_kmeans(feats, k, self.knn_max_iters)
+        centers = centers / (centers.norm(dim=1, keepdim=True) + 1e-6)
+        return centers
+
+    def _torch_kmeans(self, feats: torch.Tensor, k: int, num_iters: int) -> torch.Tensor:
+        # Simple PyTorch KMeans on CPU
+        N, D = feats.shape
+        device = feats.device
+        indices = torch.randperm(N, device=device)[:k]
+        centers = feats[indices].clone()
+        for _ in range(num_iters):
+            x_norm2 = (feats ** 2).sum(dim=1, keepdim=True)
+            c_norm2 = (centers ** 2).sum(dim=1)
+            dist2 = x_norm2 + c_norm2.unsqueeze(0) - 2 * feats @ centers.t()
+            labels = dist2.argmin(dim=1)
+            new_centers = []
+            for j in range(k):
+                mask = labels == j
+                if mask.any():
+                    new_centers.append(feats[mask].mean(dim=0))
+                else:
+                    new_centers.append(centers[j])
+            new_centers = torch.stack(new_centers, dim=0)
+            if torch.allclose(new_centers, centers):
+                centers = new_centers
+                break
+            centers = new_centers
+        return centers
+
+    def _ensure_nb_stats_initialized(self, device: torch.device = None):
+        if self.nb_sum is not None:
+            return
+        if device is None:
+            device = self.rp_head.fc.weight.device
+        rp_dim = self.rp_head.M
+        self.nb_class_count = torch.zeros(self.task_num, device=device)
+        self.nb_sum = torch.zeros(self.task_num, rp_dim, device=device)
+        self.nb_sum_sq = torch.zeros(self.task_num, rp_dim, device=device)
+
+    def _update_nb_stats(self, rp_features: torch.Tensor):
+        if self.routing_mode != "nb":
+            return
+        with torch.no_grad():
+            self._ensure_nb_stats_initialized(device=rp_features.device)
+            x = rp_features.detach()
+            t = self.task_count
+            if t >= self.task_num:
+                t = self.task_num - 1
+            self.nb_class_count[t] += x.size(0)
+            self.nb_sum[t] += x.sum(dim=0)
+            self.nb_sum_sq[t] += (x * x).sum(dim=0)
+
+
+
     def forward(self, inputs: torch.Tensor, expert_ids: torch.Tensor = None, **kwargs) -> torch.Tensor:
         if expert_ids is None:
             expert_ids = torch.full((inputs.size(0),), self.task_count, device=inputs.device, dtype=torch.long)
         x = self.experts(self.backbone, inputs, expert_ids)
         x = self.backbone.fc(x)
         return x
-    
+
     def forward_with_rp(self, inputs: torch.Tensor, **kwargs) -> torch.Tensor:
-        x = self.backbone.forward_features(inputs)
-        x = x[:, 0]
+        x = self._forward_backbone_cls(inputs)
         x = self.rp_head(x)
         return x
-    
+
     def forward_with_ema(self, inputs: torch.Tensor, expert_ids: torch.Tensor = None, **kwargs) -> torch.Tensor:
         if expert_ids is None:
             expert_ids = torch.full((inputs.size(0),), self.task_count, device=inputs.device, dtype=torch.long)
@@ -218,7 +346,7 @@ class FlyPrompt(nn.Module):
 
         # online head
         outputs_ls.append(self.backbone.fc(x))
-        
+
         # ema head
         for i in range(self.num_ema):
             outputs = []
@@ -228,12 +356,138 @@ class FlyPrompt(nn.Module):
             outputs_ls.append(outputs)
 
         return outputs_ls
-    
+
+    def _route_knn(self, rp_features: torch.Tensor) -> torch.Tensor:
+        # L2-normalize features
+        if rp_features.dim() != 2:
+            rp_features = rp_features.view(rp_features.size(0), -1)
+        device = rp_features.device
+        z = rp_features / (rp_features.norm(dim=1, keepdim=True) + 1e-6)
+
+        num_seen = min(self.task_count + 1, self.task_num)
+        task_ids = []
+        centers_list = []
+
+        for t in range(num_seen):
+            centers = self.knn_task_prototypes.get(t, None)
+            if centers is None and t == self.task_count:
+                centers = self._compute_knn_prototypes_from_current()
+            if centers is None:
+                continue
+            centers = centers.to(device)
+            centers = centers / (centers.norm(dim=1, keepdim=True) + 1e-6)
+            task_ids.append(t)
+            centers_list.append(centers)
+
+        if len(centers_list) == 0:
+            # Fall back to random routing over seen tasks
+            return torch.randint(0, num_seen, (rp_features.size(0),), device=device)
+
+        dists = []
+        for centers in centers_list:
+            x_norm2 = (z ** 2).sum(dim=1, keepdim=True)
+            c_norm2 = (centers ** 2).sum(dim=1)
+            dist2 = x_norm2 + c_norm2.unsqueeze(0) - 2 * z @ centers.t()
+            mean_dist = dist2.mean(dim=1, keepdim=True)
+            dists.append(mean_dist)
+        dists = torch.cat(dists, dim=1)  # [B, T_valid]
+
+        min_idx = dists.argmin(dim=1)
+        task_ids_tensor = torch.tensor(task_ids, device=device, dtype=torch.long)
+        expert_ids = task_ids_tensor[min_idx]
+        return expert_ids
+
+    def _route_nb(self, rp_features: torch.Tensor) -> torch.Tensor:
+        self._ensure_nb_stats_initialized(device=rp_features.device)
+        x = rp_features
+        device = self.nb_sum.device
+        if x.device != device:
+            x = x.to(device)
+
+        num_seen = min(self.task_count + 1, self.task_num)
+        counts = self.nb_class_count[:num_seen]
+        valid_mask = counts > 0
+        if not valid_mask.any():
+            # Fall back to random routing over seen tasks
+            return torch.randint(0, num_seen, (rp_features.size(0),), device=rp_features.device)
+
+        counts_valid = counts[valid_mask]
+        sum_valid = self.nb_sum[:num_seen][valid_mask]
+        sum_sq_valid = self.nb_sum_sq[:num_seen][valid_mask]
+        n = counts_valid.unsqueeze(1)  # [T_valid, 1]
+
+        mean = sum_valid / (n + 1e-6)
+        var = sum_sq_valid / (n + 1e-6) - mean * mean
+        var = torch.clamp(var, min=1e-6)
+
+        x2 = x.unsqueeze(1)  # [B, 1, D]
+        mean2 = mean.unsqueeze(0)  # [1, T_valid, D]
+        var2 = var.unsqueeze(0)    # [1, T_valid, D]
+
+        log_prob = -0.5 * (torch.log(2 * torch.pi * var2) + (x2 - mean2) ** 2 / var2)
+        log_prob = log_prob.sum(dim=-1)  # [B, T_valid]
+
+        log_prior = torch.log(counts_valid / counts_valid.sum())
+        log_post = log_prob + log_prior.unsqueeze(0)
+        idx = torch.argmax(log_post, dim=1)
+
+        valid_task_ids = torch.arange(num_seen, device=device)[valid_mask]
+        routed_task_ids = valid_task_ids[idx]
+        return routed_task_ids.to(rp_features.device)
+
+    def _route_mlp(self, rp_features: torch.Tensor) -> torch.Tensor:
+        if self.router_mlp is None:
+            # Fall back to random routing over seen tasks
+            num_seen = min(self.task_count + 1, self.task_num)
+            return torch.randint(0, num_seen, (rp_features.size(0),), device=rp_features.device)
+        logits = self.router_mlp(rp_features)
+        expert_ids = torch.argmax(logits, dim=-1)
+        return expert_ids
+
+    def route_experts(self, inputs: torch.Tensor, end: bool = False) -> torch.Tensor:
+        """Route each sample to a task expert according to routing_mode."""
+        mode = getattr(self, "routing_mode", "rpfc")
+        batch_size = inputs.size(0)
+
+        # Uniform random routing over seen tasks
+        if mode == "random":
+            num_seen = min(self.task_count + 1, self.task_num)
+            return torch.randint(0, num_seen, (batch_size,), device=inputs.device)
+
+        # Extract CLS features once
+        cls_features = self._forward_backbone_cls(inputs)
+
+        if mode == "rpfc":
+            logits = self.rp_head(cls_features)
+            return torch.argmax(logits, dim=-1)
+
+        # For other routers we reuse RP features
+        rp_features = self._get_rp_features(cls_features)
+
+        if mode == "knn":
+            return self._route_knn(rp_features)
+        if mode == "nb":
+            return self._route_nb(rp_features)
+        if mode == "mlp":
+            return self._route_mlp(rp_features)
+
+        # Default fallback
+        logits = self.rp_head(cls_features)
+        return torch.argmax(logits, dim=-1)
+
+
     def collect(self, inputs: torch.Tensor, labels: torch.Tensor):
-        features = self.backbone.forward_features(inputs)
-        features = features[:, 0]
+        features = self._forward_backbone_cls(inputs)
         labels = torch.full((labels.size(0),), self.task_count, device=labels.device, dtype=torch.long)
         self.rp_head.collect(features, labels)
+
+        # Additional statistics for alternative routers
+        if self.routing_mode in ("knn", "nb"):
+            rp_features = self._get_rp_features(features)
+            if self.routing_mode == "knn":
+                self._update_knn_buffer(rp_features)
+            if self.routing_mode == "nb":
+                self._update_nb_stats(rp_features)
 
     def update(self):
         self.rp_head.update()
@@ -266,6 +520,15 @@ class FlyPrompt(nn.Module):
         return F.cross_entropy(output, target)
 
     def process_task_count(self):
+        # Finalize routing statistics for the just-finished task
+        prev_task = self.task_count
+        if self.routing_mode == "knn":
+            centers = self._compute_knn_prototypes_from_current()
+            if centers is not None:
+                self.knn_task_prototypes[prev_task] = centers.cpu()
+            self.knn_current_features = []
+            self.knn_current_count = 0
+
         self.task_count += 1
         self.rp_head.update()
         self.experts.init_new_expert(self.task_count)
