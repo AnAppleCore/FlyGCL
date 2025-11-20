@@ -1,4 +1,4 @@
-from torchvision.datasets import CIFAR10, CIFAR100, Places365
+from torchvision.datasets import CIFAR10, CIFAR100, Places365, MNIST
 
 from .CARS196 import CARS196
 from .CUB175 import CUB175
@@ -17,6 +17,7 @@ from .TinyImageNet import TinyImageNet
 from .WIKIART import WIKIART
 
 DATASETS = {
+    "mnist": MNIST,
     "cifar10": CIFAR10,
     "cifar100": CIFAR100,
     "tinyimagenet": TinyImageNet,

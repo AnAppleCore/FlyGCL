@@ -60,6 +60,14 @@ class _Trainer():
 
         mean, std, n_classes, inp_size, in_channels = get_statistics(dataset=self.dataset)
         inp_size = 224 # override for ViT
+
+        # Handle grayscale datasets (e.g., MNIST) by adapting statistics for 3-channel ViT backbone
+        if in_channels == 1:
+            if isinstance(mean, (list, tuple)) and len(mean) == 1:
+                mean = (mean[0],) * 3
+            if isinstance(std, (list, tuple)) and len(std) == 1:
+                std = (std[0],) * 3
+
         self.n_classes = n_classes
         self.inp_size = inp_size
         self.mean = mean
@@ -89,23 +97,38 @@ class _Trainer():
                 # transforms.ToTensor(),
                 transforms.Normalize(mean, std),])
         logger.info(f"Using train-transforms {train_transform}")
-        self.test_transform = transforms.Compose([
+        test_transform_list = [
                 transforms.Resize((inp_size, inp_size)),
                 transforms.ToTensor(),
-                transforms.Normalize(mean, std),])
+        ]
+        if in_channels == 1:
+                # repeat single channel to 3 channels for ViT backbone
+                test_transform_list.append(lambda x: x.repeat(3, 1, 1))
+        test_transform_list.append(transforms.Normalize(mean, std))
+        self.test_transform = transforms.Compose(test_transform_list)
 
         # Create tensor-compatible test transform for cases where input is already a tensor
-        self.test_transform_tensor = transforms.Compose([
+        test_transform_tensor_list = [
                 transforms.Resize((inp_size, inp_size)),
                 # No ToTensor() since input is already a tensor
-                transforms.Normalize(mean, std),])
+        ]
+        if in_channels == 1:
+                # x is a batch tensor: [B, C, H, W]; repeat channels if needed
+                test_transform_tensor_list.append(
+                        lambda x: x if x.size(1) == 3 else x.repeat(1, 3, 1, 1)
+                )
+        test_transform_tensor_list.append(transforms.Normalize(mean, std))
+        self.test_transform_tensor = transforms.Compose(test_transform_tensor_list)
 
         if 'imagenet' in self.dataset or 'cub' in self.dataset or 'car' in self.dataset:
             self.load_transform = transforms.Compose([
                 transforms.Resize((inp_size, inp_size)),
                 transforms.ToTensor()])
         else:
-            self.load_transform = transforms.ToTensor()
+            load_transform_list = [transforms.ToTensor()]
+            if in_channels == 1:
+                    load_transform_list.append(lambda x: x.repeat(3, 1, 1))
+            self.load_transform = transforms.Compose(load_transform_list)
 
         self.train_dataset = self.datasets[self.dataset](root=self.data_dir, train=True,  download=True, transform=self.load_transform)
         self.online_iter_dataset = OnlineIterDataset(self.train_dataset, 1)

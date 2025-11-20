@@ -34,6 +34,12 @@ case $DATASET in
     "cub200")
         DATA_DIR="/data/datasets/CUB200_2011"
         ;;
+    "tinyimagenet")
+        DATA_DIR="/data/datasets"
+        ;;
+    "mnist")
+        DATA_DIR="/data/datasets"
+        ;;
     *)
         echo "Unsupported dataset: $DATASET"
         exit 1
