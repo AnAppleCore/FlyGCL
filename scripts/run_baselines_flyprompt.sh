@@ -21,16 +21,27 @@ export CUDA_VISIBLE_DEVICES=$GPU_ID
 echo "Using GPU: $GPU_ID"
 echo "Running experiments on dataset: $DATASET with seeds: $SEEDS"
 
+# Parse extra args to figure out effective number of tasks (override via --n_tasks if provided)
+extra=("${@:5}")
+EFFECTIVE_N_TASKS="$N_TASKS"
+for ((i=0;i<${#extra[@]};i++)); do
+    if [[ "${extra[$i]}" == "--n_tasks" ]]; then
+        if (( i+1 < ${#extra[@]} )); then
+            EFFECTIVE_N_TASKS="${extra[$((i+1))]}"
+        fi
+    fi
+done
+
 echo "========================================="
 echo "Starting FlyPrompt Baseline Experiment"
 echo "Dataset: $DATASET"
 echo "Seeds: $SEEDS"
 echo "Si-Blurry Setting: m=$N%, n=$M%"
-echo "Tasks: $N_TASKS"
+echo "Tasks: $EFFECTIVE_N_TASKS"
 echo "========================================="
 
 # Run only FlyPrompt experiment
-extra=("${@:5}") ; extract_backbone_and_filter_args "${extra[@]}"
+extract_backbone_and_filter_args "${extra[@]}"
 BACKBONE_TO_USE="${PARSED_BACKBONE:-${BACKBONE:-vit_base_patch16_224}}"
 run_experiment "flyprompt" "$BACKBONE_TO_USE" "adam" 0.005 "${FILTERED_ARGS[@]}"
 

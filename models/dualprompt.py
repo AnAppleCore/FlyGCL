@@ -45,9 +45,21 @@ class DualPrompt(nn.Module):
         self.backbone.fc.bias.requires_grad   = True
 
         # Slice the eprompt
-        self.num_pt_per_task = int(e_pool / task_num)
+        # We fix the base expert-prompt pool size to 10 for up to 10 tasks,
+        # and use 20 when there are 20 tasks. This keeps compatibility with
+        # existing checkpoints trained with e_pool=10 while allowing a larger
+        # pool when task_num=20.
+        if self.task_num <= 10:
+            self.e_pool = 10
+        elif self.task_num == 20:
+            self.e_pool = 20
+        else:
+            raise ValueError(f"Unsupported task_num={self.task_num} for DualPrompt; only <=10 or 20 are supported.")
 
-        self.e_pool = e_pool
+        assert self.e_pool >= self.task_num, "e_pool must be at least as large as task_num"
+        self.num_pt_per_task = int(self.e_pool / self.task_num)
+        assert self.num_pt_per_task > 0, "Each task must get at least one prompt slot"
+
         self.len_g_prompt = len_g_prompt if not load_pt else 10
         self.len_e_prompt = len_e_prompt
         self.g_length = len(pos_g_prompt) if pos_g_prompt else 0
@@ -64,7 +76,7 @@ class DualPrompt(nn.Module):
                 _batchwise_selection=False, _diversed_selection=False, kwargs=self.kwargs
                 )
             self.e_prompt = None if len(pos_e_prompt) == 0 else Prompt(
-                e_pool, 1, self.e_length * self.len_e_prompt, self.backbone.num_features,
+                self.e_pool, 1, self.e_length * self.len_e_prompt, self.backbone.num_features,
                 _batchwise_selection=False, _diversed_selection=False, kwargs=self.kwargs
                 )
         elif prompt_func == 'prefix_tuning':
@@ -74,7 +86,7 @@ class DualPrompt(nn.Module):
                 _batchwise_selection=False, _diversed_selection=False, kwargs=self.kwargs
                 )
             self.e_prompt = None if len(pos_e_prompt) == 0 else Prompt(
-                e_pool, 1, 2 * self.e_length * self.len_e_prompt, self.backbone.num_features,
+                self.e_pool, 1, 2 * self.e_length * self.len_e_prompt, self.backbone.num_features,
                 _batchwise_selection=False, _diversed_selection=False, kwargs=self.kwargs
                 )
         else: raise ValueError('Unknown prompt_func: {}'.format(prompt_func))
@@ -89,8 +101,30 @@ class DualPrompt(nn.Module):
             logger.info(f"load prompt from {g_path} and {e_path}")
             g_prompt = torch.load(g_path)
             e_prompt = torch.load(e_path)
+
+            # Load global prompts as-is
             self.g_prompt.prompts = nn.Parameter(g_prompt.detach().clone())
-            self.e_prompt.prompts = nn.Parameter(e_prompt.detach().clone())
+
+            # e_prompt checkpoints are assumed to be saved with pool_size=10.
+            # If the current model uses a larger pool (e.g., e_pool=20 for
+            # task_num=20), we tile the loaded prompts along the pool
+            # dimension to match self.e_pool.
+            e_prompt = e_prompt.detach().clone()
+            orig_pool = e_prompt.size(0)
+            if self.e_pool == orig_pool:
+                expanded = e_prompt
+            elif self.e_pool > orig_pool:
+                repeat_factor = self.e_pool // orig_pool
+                if self.e_pool % orig_pool != 0:
+                    raise ValueError(
+                        f"Cannot expand e_prompt from pool_size={orig_pool} to {self.e_pool} (non-integer repeat)."
+                    )
+                expanded = e_prompt.repeat(repeat_factor, 1, 1)
+            else:
+                # If desired pool is smaller than checkpoint pool, truncate.
+                expanded = e_prompt[: self.e_pool]
+
+            self.e_prompt.prompts = nn.Parameter(expanded)
 
     def prompt_tuning(self,
                       x        : torch.Tensor,
