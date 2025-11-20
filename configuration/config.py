@@ -10,7 +10,9 @@ def base_parser():
     # ========== Experiment configuration ==========
     parser.add_argument("--seeds", type=int, nargs="+", default=[1])
     parser.add_argument("--note", type=str, default="", help="Short description of the exp")
-    parser.add_argument("--log_path",type=str,default="results",help="The path logs are saved.",)
+    parser.add_argument("--log_path", type=str, default="results", help="The path logs are saved.")
+    parser.add_argument("--save_checkpoint", action="store_true", default=False,
+                        help="Save final model checkpoint and config for offline evaluation.")
 
     # ============ Model configuration =============
     parser.add_argument("--method", type=str, default="l2p", help="Method name", choices=METHODS.keys())
@@ -48,6 +50,15 @@ def base_parser():
 
     # ============= MISA configurations ============
     parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
+    # ============= MEPO configurations ============
+    parser.add_argument('--mepo_backbone_path', type=str, default=None,
+                        help='Path to pretrained backbone checkpoint for MEPO backbone override.')
+    parser.add_argument('--cov_path', type=str, default=None,
+                        help='Path to covariance matrix .npy for MEPO CLS calibration.')
+    parser.add_argument('--cov_coef', type=float, default=0.7,
+                        help='Interpolation coeff between original and MEPO-calibrated CLS (0-1).')
+
+
 
     # ========== FlyPrompt configurations ==========
     parser.add_argument("--len_prompt", type=int, default=20, help="The length of the prompt for each expert")

@@ -5,6 +5,7 @@ import random
 import sys
 import time
 from collections import defaultdict
+import json
 
 import numpy as np
 import torch
@@ -149,7 +150,8 @@ class _Trainer():
 
         logger.info(f"Building model: {self.method}")
         self.model = select_model(self.method, self.backbone, self.n_classes, self.n_tasks, self.kwargs).to(self.device)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        # Use the new torch.amp API (torch.cuda.amp.GradScaler is deprecated)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
         self.model.to(self.device)
         self.model_without_ddp = self.model
@@ -379,6 +381,34 @@ class _Trainer():
             if self.eval_period != np.inf:
                 np.save(f'{self.log_dir}/seed_{self.rnd_seed}_eval.npy', eval_results['test_acc'])
                 np.save(f'{self.log_dir}/seed_{self.rnd_seed}_eval_time.npy', eval_results['data_cnt'])
+
+            if getattr(self, "save_checkpoint", False):
+                ckpt = {
+                    "model_state_dict": self.model_without_ddp.state_dict(),
+                    "config": self.kwargs,
+                    "exposed_classes": self.exposed_classes,
+                    "rnd_seed": self.rnd_seed,
+                    "note": self.note,
+                    "dataset": self.dataset,
+                    "method": self.method,
+                }
+                ckpt_path = os.path.join(self.log_dir, f"seed_{self.rnd_seed}_ckpt.pth")
+                torch.save(ckpt, ckpt_path)
+
+                config_path = os.path.join(self.log_dir, f"seed_{self.rnd_seed}_config.json")
+                try:
+                    cfg = self.kwargs.copy()
+                    def _to_jsonable(obj):
+                        try:
+                            json.dumps(obj)
+                            return obj
+                        except TypeError:
+                            return str(obj)
+                    cfg = {k: _to_jsonable(v) for k, v in cfg.items()}
+                    with open(config_path, "w") as f:
+                        json.dump(cfg, f, indent=2)
+                except Exception as e:
+                    logger.warning(f"Failed to save config JSON: {e}")
 
     def profile_worker(self, gpu) -> None:
         # ============ Toy experiment setup ============
