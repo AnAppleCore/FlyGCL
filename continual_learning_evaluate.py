@@ -155,12 +155,15 @@ def main():
         eval_dict = trainer.online_evaluate(test_loader, task_id=trainer.n_tasks - 1, end=True)
 
     offline_acc = float(eval_dict["avg_acc"])
+    offline_cls_acc = eval_dict.get("cls_acc", None)
 
     # Load npy results and recompute basic metrics
     task_acc = np.load(task_acc_path)
+    n_tasks_npy = int(task_acc.shape[0])
     A_last_npy = float(task_acc[-1])
     A_avg_npy = float(np.mean(task_acc))
     A_auc_npy = None
+    eval_series = None
     if os.path.exists(eval_path):
         eval_series = np.load(eval_path)
         if eval_series.size > 0:
@@ -171,14 +174,29 @@ def main():
     print("============================================")
     print(f"Log dir: {log_dir}")
     print(f"Seed: {seed}")
-    print(f"Offline avg_acc (recomputed): {offline_acc:.6f}")
-    print(f"A_last from npy (seed_{seed}.npy): {A_last_npy:.6f}")
-    print(f"Abs diff: {diff:.6e}")
-    print(f"A_avg from npy: {A_avg_npy:.6f}")
+    print(f"#Tasks (trainer / npy): {trainer.n_tasks} / {n_tasks_npy}")
+    print(f"Per-task accuracies from training (seed_{seed}.npy):")
+    for t_id, acc_t in enumerate(task_acc):
+        print(f"  Task {t_id:02d}: {acc_t:.6f}")
+    print(f"Offline avg_acc (recomputed on final model): {offline_acc:.6f}")
+    print(f"A_last from npy (after last task): {A_last_npy:.6f}")
+    print(f"Abs diff between offline avg_acc and A_last: {diff:.6e}")
+    print(f"A_avg (mean over tasks) from npy: {A_avg_npy:.6f}")
     if A_auc_npy is not None:
-        print(f"A_auc from npy (seed_{seed}_eval.npy): {A_auc_npy:.6f}")
+        print(f"A_auc (mean over eval series) from npy: {A_auc_npy:.6f}")
+        print(f"  #Eval points: {eval_series.shape[0]}")
+        head = min(5, eval_series.shape[0])
+        tail = min(5, eval_series.shape[0])
+        print(f"  First {head} eval accs: {eval_series[:head]}")
+        if eval_series.shape[0] > head:
+            print(f"  Last {tail} eval accs:  {eval_series[-tail:]}")
     else:
         print("A_auc from npy: N/A (no seed_*_eval.npy found)")
+    if offline_cls_acc is not None:
+        cls_acc_np = np.array(offline_cls_acc, dtype=float)
+        print(f"Offline cls_acc: {cls_acc_np.shape[0]} classes")
+        k = min(10, cls_acc_np.shape[0])
+        print(f"  First {k} class accs: {cls_acc_np[:k]}")
     if diff < 1e-4:
         print("[Result] Offline evaluation matches npy A_last within 1e-4 tolerance.")
     else:

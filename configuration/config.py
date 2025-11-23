@@ -48,18 +48,6 @@ def base_parser():
     # ============= ViT configurations =============
     parser.add_argument('--profile', action='store_true', default=False, help='enable profiling for ViT_Prompt')
 
-    # ============= MISA configurations ============
-    parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
-    # ============= MEPO configurations ============
-    parser.add_argument('--mepo_backbone_path', type=str, default=None,
-                        help='Path to pretrained backbone checkpoint for MEPO backbone override.')
-    parser.add_argument('--cov_path', type=str, default=None,
-                        help='Path to covariance matrix .npy for MEPO CLS calibration.')
-    parser.add_argument('--cov_coef', type=float, default=0.7,
-                        help='Interpolation coeff between original and MEPO-calibrated CLS (0-1).')
-
-
-
     # ========== FlyPrompt configurations ==========
     parser.add_argument("--len_prompt", type=int, default=20, help="The length of the prompt for each expert")
     parser.add_argument("--pos_prompt", type=int, nargs="+", default=[0, 1, 2, 3, 4], help="The position of the prompt")
@@ -74,6 +62,21 @@ def base_parser():
                         help="Hidden dimension of two-layer MLP router when routing_mode is 'mlp'.")
     parser.add_argument("--routing_mlp_dropout", type=float, default=0.1,
                         help="Dropout rate of the two-layer MLP router when routing_mode is 'mlp'.")
+
+    # ========== DualPrompt EMA head bank ==========
+    parser.add_argument('--use_ema_head', action='store_true', default=False,
+                        help='Enable EMA head bank for DualPrompt (two EMA heads with ratios 0.9 and 0.99).')
+
+    # ============= MISA configurations ============
+    parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
+
+    # ============= MEPO configurations ============
+    parser.add_argument('--mepo_backbone_path', type=str, default=None,
+                        help='Path to pretrained backbone checkpoint for MEPO backbone override.')
+    parser.add_argument('--cov_path', type=str, default=None,
+                        help='Path to covariance matrix .npy for MEPO CLS calibration.')
+    parser.add_argument('--cov_coef', type=float, default=0.7,
+                        help='Interpolation coeff between original and MEPO-calibrated CLS (0-1).')
 
     args = parser.parse_args()
     return args

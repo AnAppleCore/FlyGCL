@@ -100,6 +100,28 @@ class DualPrompt(nn.Module):
         self.backbone.fc.weight.requires_grad = True
         self.backbone.fc.bias.requires_grad   = True
 
+
+        # Optional EMA head bank for ensembling (online + EMA heads)
+        self.use_ema_head = bool(self.kwargs.get("use_ema_head", False))
+        # Accept ema_ratio from kwargs if provided; otherwise default to (0.9, 0.99)
+        ema_ratio_cfg = self.kwargs.get("ema_ratio", (0.9, 0.99))
+        try:
+            self.ema_ratio = tuple(float(r) for r in ema_ratio_cfg)
+        except Exception:
+            self.ema_ratio = (0.9, 0.99)
+        self.num_ema = len(self.ema_ratio)
+        if self.use_ema_head and self.num_ema > 0:
+            self.ema_heads = nn.ModuleList([
+                nn.Linear(self.backbone.num_features, self.num_classes, bias=True)
+                for _ in range(self.num_ema)
+            ])
+            for head in self.ema_heads:
+                for p in head.parameters():
+                    p.requires_grad = False
+            self._init_ema_heads()
+        else:
+            self.ema_heads = nn.ModuleList()
+
         # Optionally load covariance matrix for MEPO calibration
         if self.cov_path is not None:
             self._load_mepo_covariance(self.cov_path)
@@ -308,6 +330,80 @@ class DualPrompt(nn.Module):
             return x, cls_token
         else:
             return x
+
+    @torch.no_grad()
+    def _init_ema_heads(self) -> None:
+        """Initialize EMA heads to match the online classifier head."""
+        if not getattr(self, "use_ema_head", False):
+            return
+        if not hasattr(self, "ema_heads") or len(self.ema_heads) == 0:
+            return
+        w = self.backbone.fc.weight.data
+        b = self.backbone.fc.bias.data
+        for head in self.ema_heads:
+            head.weight.data.copy_(w)
+            head.bias.data.copy_(b)
+
+    @torch.no_grad()
+    def update_ema_fc(self) -> None:
+        """Momentum-update EMA heads from the online classifier head."""
+        if not getattr(self, "use_ema_head", False):
+            return
+        if not hasattr(self, "ema_heads") or len(self.ema_heads) == 0:
+            return
+        online_w = self.backbone.fc.weight.data
+        online_b = self.backbone.fc.bias.data
+        for i, head in enumerate(self.ema_heads):
+            m = float(self.ema_ratio[i])
+            head.weight.data.mul_(m).add_(online_w, alpha=1.0 - m)
+            head.bias.data.mul_(m).add_(online_b, alpha=1.0 - m)
+
+    def forward_with_ema(self, inputs: torch.Tensor, **kwargs):
+        """Forward pass returning a list of logits from [online, *EMA heads]."""
+        with torch.no_grad():
+            x = self.backbone.patch_embed(inputs)
+            B, _, _ = x.size()
+            cls_token = self.backbone.cls_token.expand(B, -1, -1)
+            token_appended = torch.cat((cls_token, x), dim=1)
+            x = self.backbone.pos_drop(token_appended + self.backbone.pos_embed)
+            query = self.backbone.blocks(x)
+            query = self.backbone.norm(query)[:, 0]
+
+        if self.g_prompt is not None:
+            g_p = self.g_prompt.prompts[0].expand(B, -1, -1)
+        else:
+            g_p = None
+
+        if self.e_prompt is not None:
+            start_id = self.task_count * self.num_pt_per_task
+            end_id = (self.task_count + 1) * self.num_pt_per_task
+            if self.training and start_id < self.e_pool:
+                res_e = self.e_prompt(query, s=start_id, e=end_id)
+            else:
+                res_e = self.e_prompt(query)
+            e_s, e_p = res_e
+        else:
+            e_p = None
+            e_s = 0
+
+        x = self.prompt_func(self.backbone.pos_drop(token_appended + self.backbone.pos_embed), g_p, e_p)
+        x = self.backbone.norm(x)
+        cls_token = x[:, 0]
+        cls_token = self._apply_mepo_cov_calibration(cls_token)
+
+        outputs_ls = [self.backbone.fc(cls_token)]
+        if getattr(self, "use_ema_head", False) and hasattr(self, "ema_heads") and len(self.ema_heads) > 0:
+            for head in self.ema_heads:
+                outputs_ls.append(head(cls_token))
+
+        # keep similarity for compatibility
+        if isinstance(e_s, torch.Tensor):
+            self.similarity = e_s.mean()
+        else:
+            self.similarity = torch.tensor(0., device=cls_token.device)
+
+        return outputs_ls
+
     def _apply_mepo_cov_calibration(self, cls_token: torch.Tensor) -> torch.Tensor:
         """Apply MEPO covariance calibration to CLS token if enabled.
 

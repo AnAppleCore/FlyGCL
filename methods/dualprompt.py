@@ -64,6 +64,10 @@ class DualPrompt(_Trainer):
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.update_schedule()
+        # Update EMA head bank to track the online classifier head
+        if getattr(self.model_without_ddp, 'use_ema_head', False):
+            self.model_without_ddp.update_ema_fc()
+
 
         total_loss += loss.item()
         total_correct += torch.sum(preds == y.unsqueeze(1)).item()
@@ -193,8 +197,14 @@ class DualPrompt(_Trainer):
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                logit = self.model(x)
-                logit = logit + self.mask
+                if getattr(self.model_without_ddp, 'use_ema_head', False) and len(getattr(self.model_without_ddp, 'ema_heads', [])) > 0:
+                    logit_ls = self.model_without_ddp.forward_with_ema(x)
+                    logit_ls = [logit + self.mask for logit in logit_ls]
+                    logit_ls = [torch.softmax(logit, dim=-1) for logit in logit_ls]
+                    logit = torch.stack(logit_ls, dim=-1).max(dim=-1)[0]
+                else:
+                    logit = self.model(x)
+                    logit = logit + self.mask
                 loss = self.criterion(logit, y)
                 pred = torch.argmax(logit, dim=-1)
                 _, preds = logit.topk(self.topk, 1, True, True)
