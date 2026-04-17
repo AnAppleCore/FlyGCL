@@ -93,11 +93,9 @@ class FlyPrompt(_Trainer):
         self.scaler.update()
         self.update_schedule()
 
-        # Update EMA heads for the expert corresponding to the current
-        # internal step (model.task_count). This avoids using benchmark
-        # task ids.
-        if hasattr(self.model_without_ddp, "update_ema_fc"):
-            self.model_without_ddp.update_ema_fc()
+        if not getattr(self, "no_ema_ensemble", False):
+            if hasattr(self.model_without_ddp, "update_ema_fc"):
+                self.model_without_ddp.update_ema_fc()
 
         total_loss += loss.item()
         total_correct += torch.sum(preds == y.unsqueeze(1)).item()
@@ -135,13 +133,16 @@ class FlyPrompt(_Trainer):
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                # use RP head to get expert_ids
                 logit_raw = self.model_without_ddp.forward_with_rp(x)
                 expert_ids = torch.argmax(logit_raw, dim=-1)
-                logit_ls = self.model_without_ddp.forward_with_ema(x, expert_ids=expert_ids)
 
-                logit_ls = [logit + self.mask for logit in logit_ls]
-                logit = self._ensemble_logits(logit_ls)
+                if getattr(self, "no_ema_ensemble", False):
+                    logit = self.model_without_ddp(x, expert_ids=expert_ids)
+                    logit = logit + self.mask
+                else:
+                    logit_ls = self.model_without_ddp.forward_with_ema(x, expert_ids=expert_ids)
+                    logit_ls = [logit + self.mask for logit in logit_ls]
+                    logit = self._ensemble_logits(logit_ls)
 
                 loss = self.criterion(logit, y)
                 pred = torch.argmax(logit, dim=-1)

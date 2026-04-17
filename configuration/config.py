@@ -77,6 +77,12 @@ def base_parser():
     parser.add_argument("--ema_ratio", type=float, nargs="+", default=[0.9, 0.99], help="The EMA ratio for the expert FCs")
     parser.add_argument("--ensemble_method", type=str, default="softmax_max_prob", choices=["mean", "max_prob", "min_entropy", "softmax_mean", "softmax_max_prob", "softmax_min_entropy"],
                         help="Ensemble method for combining expert outputs: mean (average), max (maximum), min_entropy (minimum entropy), and softmax variants of these.")
+    parser.add_argument("--router_type", type=str, default="rpfc", choices=["rpfc", "ws"],
+                        help="Routing head type: rpfc (random projection FC) or ws (whitened subspace).")
+    parser.add_argument("--ws_k", type=int, default=32,
+                        help="Subspace rank for whitened subspace router.")
+    parser.add_argument("--no_ema_ensemble", action="store_true", default=False,
+                        help="Disable EMA head bank: skip EMA updates during training and use only the online fc head at evaluation.")
 
     # ========== RPFC gating configurations ==========
     parser.add_argument("--use_rp_gate", action="store_true", default=False,

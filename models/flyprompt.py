@@ -1,6 +1,8 @@
 import logging
-from typing import Iterable
+from collections import defaultdict
+from typing import Dict, Iterable, List, Optional
 
+import numpy as np
 import timm
 import torch
 import torch.nn as nn
@@ -134,6 +136,115 @@ class RPFC(nn.Module):
         return x
 
 
+class WhitenedSubspaceHead(nn.Module):
+    """Whitened-subspace routing head — drop-in replacement for RPFC.
+
+    For each task t we store per-task statistics (mu, var, Bw) fitted from
+    buffered CLS features.  At inference the augmented residual score
+        e_t(r) = 1 - ||Bw^T (r * w)||^2 / (||r * w||^2 + eps)
+    is computed for every fitted task; lower e means better match.
+    ``forward`` returns ``-e`` so that the interface matches RPFC (higher = better).
+
+    Reference: TaskWhitenedSubspaceRouter in CLEGO/skill_benchmark/task_router.py
+    """
+
+    def __init__(self,
+                 embed_dim    : int = 768,
+                 num_classes  : int = 10,
+                 k            : int = 32,
+                 eps          : float = 1e-6,
+                 **kwargs):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_classes = num_classes
+        self.k = k
+        self.eps = eps
+
+        self._feat_buffers: Dict[int, List[torch.Tensor]] = defaultdict(list)
+        self._stats: Dict[int, dict] = {}
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+    # ----- collect / update / forward (same signature as RPFC) -----
+
+    @torch.no_grad()
+    def collect(self, features: torch.Tensor, labels: torch.Tensor):
+        features = features.detach().cpu()
+        labels = labels.detach().cpu()
+        for feat, lab in zip(features, labels):
+            tid = int(lab.item())
+            self._feat_buffers[tid].append(feat)
+
+    @torch.no_grad()
+    def update(self):
+        for tid, feat_list in self._feat_buffers.items():
+            if len(feat_list) < 2:
+                continue
+            self._fit_task(tid, feat_list)
+
+    @torch.no_grad()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B = x.size(0)
+        device = x.device
+        out = torch.full((B, self.num_classes), float("-inf"), device=device)
+        eps = self.eps
+
+        for tid, st in self._stats.items():
+            if tid >= self.num_classes:
+                continue
+            mu = st["mu"].to(device)
+            var = st["var"].to(device)
+            Bw = st["Bw"].to(device)
+
+            w = 1.0 / torch.sqrt(var.clamp(min=0.0) + eps)
+            xw = x * w.unsqueeze(0)
+            xw_sq = (xw * xw).sum(dim=1)
+            proj = xw @ Bw
+            proj_sq = (proj * proj).sum(dim=1)
+            residual = 1.0 - proj_sq / (xw_sq + eps)
+            out[:, tid] = -residual
+
+        return out
+
+    # ----- internal fitting -----
+
+    def _fit_task(self, tid: int, feat_list: List[torch.Tensor]):
+        R = torch.stack(feat_list, dim=0)  # [N, d]
+        N, d = R.shape
+        k = min(self.k, d - 1)
+        eps = self.eps
+
+        mu = R.mean(dim=0)
+        var = (R * R).mean(dim=0) - mu * mu
+        var = var.clamp(min=0.0)
+
+        w = 1.0 / torch.sqrt(var + eps)
+        Z = (R - mu.unsqueeze(0)) * w.unsqueeze(0)
+        Z64 = Z.to(torch.float64)
+        cov = (Z64.T @ Z64) / float(max(N - 1, 1))
+        cov_np = cov.to(torch.float32).numpy()
+
+        eig, V = np.linalg.eigh(cov_np)
+        order = np.argsort(eig)[::-1][:k]
+        Uw = V[:, order].astype(np.float32, copy=False)
+
+        mw = mu * w
+        mw_norm = mw.norm(p=2).clamp(min=eps)
+        mw = mw / mw_norm
+        mw_np = mw.numpy().astype(np.float32, copy=False)
+
+        A = np.concatenate([mw_np[:, None], Uw], axis=1)  # [d, 1+k]
+        Bw, _ = np.linalg.qr(A)
+        Bw = Bw.astype(np.float32, copy=False)
+
+        self._stats[tid] = {
+            "mu": torch.from_numpy(mu.numpy().copy()),
+            "var": torch.from_numpy(var.numpy().copy()),
+            "Bw": torch.from_numpy(Bw.copy()),
+        }
+
+
 class FlyPrompt(nn.Module):
     def __init__(self,
                  task_num       : int   = 10,
@@ -144,6 +255,8 @@ class FlyPrompt(nn.Module):
                  rp_dim         : int   = 10000,
                  rp_ridge       : float = 1e4,
                  ema_ratio      : Iterable[float] = (0.9, 0.99),
+                 router_type    : str   = "rpfc",
+                 ws_k           : int   = 32,
                  **kwargs):
 
         super().__init__()
@@ -157,12 +270,12 @@ class FlyPrompt(nn.Module):
         self.rp_ridge = rp_ridge
         self.ema_ratio = ema_ratio
         self.num_ema = len(ema_ratio)
+        self.router_type = router_type
 
         self.task_count = 0
 
         # Backbone
         assert backbone_name is not None, 'backbone_name must be specified'
-        # Use custom ViT model from models.vit to support local .npz loading
         if hasattr(vit, backbone_name):
             logger.info(f'Using custom ViT model: {backbone_name}')
             self.add_module('backbone', getattr(vit, backbone_name)(pretrained=True, num_classes=num_classes))
@@ -195,13 +308,22 @@ class FlyPrompt(nn.Module):
                     param.requires_grad = False
         self.init_fc(expert_id = 0)
 
-        # Random projection head
-        self.rp_head = RPFC(
-            M = self.rp_dim,
-            ridge = self.rp_ridge,
-            embed_dim = self.embed_dim,
-            num_classes = self.task_num,
-        )
+        # Routing head (RPFC or Whitened Subspace)
+        if self.router_type == "ws":
+            logger.info(f'Using WhitenedSubspaceHead router (k={ws_k})')
+            self.rp_head = WhitenedSubspaceHead(
+                embed_dim = self.embed_dim,
+                num_classes = self.task_num,
+                k = ws_k,
+            )
+        else:
+            logger.info(f'Using RPFC router (dim={rp_dim}, ridge={rp_ridge})')
+            self.rp_head = RPFC(
+                M = self.rp_dim,
+                ridge = self.rp_ridge,
+                embed_dim = self.embed_dim,
+                num_classes = self.task_num,
+            )
 
     def forward(self, inputs: torch.Tensor, expert_ids: torch.Tensor = None, **kwargs) -> torch.Tensor:
         if expert_ids is None:
