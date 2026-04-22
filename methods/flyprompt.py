@@ -59,7 +59,10 @@ class FlyPrompt(_Trainer):
 
         with torch.no_grad():
             self.model.eval()
-            self.model_without_ddp.collect(images, labels)
+            routing_id = self.task_id
+            if getattr(self, "use_internal_step_schedule", False):
+                routing_id = getattr(self, "current_step", 0)
+            self.model_without_ddp.collect(images, labels, routing_id=routing_id)
 
     def online_train(self, data):
         self.model.train()

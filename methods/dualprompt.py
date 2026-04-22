@@ -54,10 +54,12 @@ class DualPrompt(_Trainer):
             x = self.model_without_ddp.backbone.norm(x)
             cls_feat = x[:, 0]
 
-        step_id = getattr(self, "current_step", 0)
+        routing_id = self.task_id
+        if getattr(self, "use_internal_step_schedule", False):
+            routing_id = getattr(self, "current_step", 0)
         step_labels = torch.full(
             (labels.size(0),),
-            step_id,
+            routing_id,
             device=labels.device,
             dtype=torch.long,
         )

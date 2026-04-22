@@ -121,7 +121,7 @@ def select_model(method, backbone, num_classes=None, n_tasks=None, kwargs=None):
         task_num_for_model = n_tasks
         if kwargs is not None and method in ("dualprompt", "mvp", "flyprompt"):
             step_num = kwargs.get("step_num", None)
-            if step_num is not None and step_num > 0:
+            if step_num is not None and step_num > 1:
                 task_num_for_model = step_num
 
         model = MODELS[method](

@@ -357,10 +357,12 @@ class FlyPrompt(nn.Module):
 
         return outputs_ls
     
-    def collect(self, inputs: torch.Tensor, labels: torch.Tensor):
+    def collect(self, inputs: torch.Tensor, labels: torch.Tensor, routing_id: int = None):
         features = self.backbone.forward_features(inputs)
         features = features[:, 0]
-        labels = torch.full((labels.size(0),), self.task_count, device=labels.device, dtype=torch.long)
+        if routing_id is None:
+            routing_id = self.task_count
+        labels = torch.full((labels.size(0),), routing_id, device=labels.device, dtype=torch.long)
         self.rp_head.collect(features, labels)
 
     def update(self):

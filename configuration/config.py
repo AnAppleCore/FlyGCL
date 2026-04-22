@@ -21,7 +21,7 @@ def base_parser():
     parser.add_argument("--data_dir", type=str, default="/data/datasets/", help="location of the dataset")
     parser.add_argument("--n_tasks", type=int, default=5, help="The number of tasks")
     parser.add_argument("--step_num", type=int, default=-1,
-                        help="Number of internal steps for task-free prompt methods; if <=0, defaults to n_tasks.")
+                        help="Number of internal steps for DualPrompt/MVP/FlyPrompt. Only values > 1 enable sample-based internal step scheduling; otherwise these methods follow task boundaries.")
 
     parser.add_argument("--n", type=int, default=50, help="The percentage of disjoint split. Disjoint=100, Blurry=0")
     parser.add_argument("--m", type=int, default=10, help="The percentage of blurry samples in blurry split. Uniform split=100, Disjoint=0")
