@@ -35,17 +35,18 @@ class _Trainer():
         self.start_time = time.time()
         self.eval_period = np.inf if self.eval_period < 0 else self.eval_period
 
-        # Internal step-based schedule (task-boundary-free) for selected methods.
+        # Internal step-based schedule is enabled only when step_num is
+        # explicitly set to a value > 1. Otherwise these methods fall back to
+        # the original task-boundary-driven schedule (same as L2P/SPrompt).
         method_name = getattr(self, "method", None)
         step_aware_methods = {"dualprompt", "mvp", "flyprompt"}
+        self.use_internal_step_schedule = False
         if method_name in step_aware_methods:
-            # step_num > 1; if not provided or <=0, default to n_tasks.
             self.step_num = getattr(self, "step_num", None)
-            if self.step_num is None or self.step_num <= 0:
-                if hasattr(self, "n_tasks"):
-                    self.step_num = self.n_tasks
-            if self.step_num is not None and self.step_num <= 1:
-                raise ValueError(f"step_num must be > 1, got {self.step_num}")
+            if self.step_num is not None and self.step_num > 1:
+                self.use_internal_step_schedule = True
+            else:
+                self.step_num = None
         else:
             # Other methods keep using the original task-id based schedule.
             self.step_num = None

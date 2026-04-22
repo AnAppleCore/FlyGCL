@@ -78,9 +78,9 @@ class DualPrompt(_Trainer):
         # collect RPFC features once per online_step (per internal step)
         self._collect_rp_features(images.clone(), labels.clone())
 
-        # Update internal step schedule based only on the number of samples
-        # seen (task-boundary-free).
-        if hasattr(self, "_maybe_advance_internal_step"):
+        # When step_num is explicitly set, advance the internal step schedule
+        # by seen samples; otherwise we keep the original task-boundary flow.
+        if getattr(self, "use_internal_step_schedule", False):
             batch_size_global = images.size(0) * self.world_size
             self._maybe_advance_internal_step(batch_size_global)
 
@@ -545,10 +545,7 @@ class DualPrompt(_Trainer):
         pass
 
     def online_after_task(self, cur_iter):
-        """Hook called after each benchmark task.
-
-        We keep ``task_id`` for logging/analysis only; the underlying model's
-        internal step state is advanced exclusively via the task-free
-        ``_maybe_advance_internal_step`` scheduler.
-        """
+        """Advance by task boundary unless explicit internal steps are used."""
+        if not getattr(self, "use_internal_step_schedule", False):
+            self.model_without_ddp.process_task_count()
         self.task_id += 1
