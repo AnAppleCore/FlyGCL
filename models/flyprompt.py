@@ -136,6 +136,47 @@ class RPFC(nn.Module):
         return x
 
 
+class SharedGAnalyticHead(nn.Module):
+    def __init__(self, shared_head: RPFC, num_classes: int) -> None:
+        super().__init__()
+        object.__setattr__(self, "shared_head", shared_head)
+        self.ridge = shared_head.ridge
+        self.num_classes = num_classes
+        self.fc = nn.Linear(shared_head.M, num_classes, bias=False)
+        self.register_buffer('Q', torch.zeros(shared_head.M, num_classes))
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def target2onehot(self, targets):
+        device = targets.device
+        onehot = torch.zeros(targets.size(0), self.num_classes, device=device)
+        onehot.scatter_(1, targets.unsqueeze(1), 1)
+        return onehot
+
+    def encode(self, features):
+        if self.shared_head.use_rp:
+            return F.relu(features @ self.shared_head.W_rand)
+        return features
+
+    def collect(self, features, labels):
+        features = features.detach()
+        labels = labels.detach()
+        features_h = self.encode(features)
+        Y = self.target2onehot(labels)
+        self.Q = self.Q + features_h.T @ Y
+
+    def update(self):
+        device = self.fc.weight.device
+        eye = torch.eye(self.shared_head.M, device=device, dtype=self.shared_head.G.dtype)
+        Wo = torch.linalg.solve(self.shared_head.G + self.ridge * eye, self.Q).T
+        self.fc.weight.data = Wo.to(device)
+
+    def forward(self, x):
+        x = self.encode(x)
+        return self.fc(x)
+
+
 class WhitenedSubspaceHead(nn.Module):
     """Whitened-subspace routing head — drop-in replacement for RPFC.
 
@@ -271,6 +312,7 @@ class FlyPrompt(nn.Module):
         self.ema_ratio = ema_ratio
         self.num_ema = len(ema_ratio)
         self.router_type = router_type
+        self.use_analytic_head = bool(kwargs.get("use_analytic_head", False))
 
         self.task_count = 0
 
@@ -325,6 +367,14 @@ class FlyPrompt(nn.Module):
                 num_classes = self.task_num,
             )
 
+        if self.use_analytic_head:
+            if not isinstance(self.rp_head, RPFC):
+                raise ValueError("FlyPrompt analytic head requires router_type='rpfc' to share W_rand and G.")
+            logger.info('Using shared-G analytic class head for FlyPrompt')
+            self.analytic_head = SharedGAnalyticHead(self.rp_head, self.num_classes)
+        else:
+            self.analytic_head = None
+
     def forward(self, inputs: torch.Tensor, expert_ids: torch.Tensor = None, **kwargs) -> torch.Tensor:
         if expert_ids is None:
             expert_ids = torch.full((inputs.size(0),), self.task_count, device=inputs.device, dtype=torch.long)
@@ -337,6 +387,13 @@ class FlyPrompt(nn.Module):
         x = x[:, 0]
         x = self.rp_head(x)
         return x
+
+    def forward_with_analytic(self, inputs: torch.Tensor, **kwargs) -> torch.Tensor:
+        if self.analytic_head is None:
+            raise RuntimeError("FlyPrompt analytic head is disabled. Set --use_analytic_head to enable it.")
+        x = self.backbone.forward_features(inputs)
+        x = x[:, 0]
+        return self.analytic_head(x)
     
     def forward_with_ema(self, inputs: torch.Tensor, expert_ids: torch.Tensor = None, **kwargs) -> torch.Tensor:
         if expert_ids is None:
@@ -360,13 +417,18 @@ class FlyPrompt(nn.Module):
     def collect(self, inputs: torch.Tensor, labels: torch.Tensor, routing_id: int = None):
         features = self.backbone.forward_features(inputs)
         features = features[:, 0]
+        class_labels = labels.detach().long()
         if routing_id is None:
             routing_id = self.task_count
-        labels = torch.full((labels.size(0),), routing_id, device=labels.device, dtype=torch.long)
-        self.rp_head.collect(features, labels)
+        routing_labels = torch.full((labels.size(0),), routing_id, device=labels.device, dtype=torch.long)
+        self.rp_head.collect(features, routing_labels)
+        if self.analytic_head is not None:
+            self.analytic_head.collect(features, class_labels)
 
     def update(self):
         self.rp_head.update()
+        if self.analytic_head is not None:
+            self.analytic_head.update()
 
     @torch.no_grad()
     def init_fc(self, expert_id: int = None):

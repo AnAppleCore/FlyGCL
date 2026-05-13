@@ -5,6 +5,7 @@ from typing import Dict
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 
 from methods._trainer import _Trainer
@@ -118,11 +119,212 @@ class FlyPrompt(_Trainer):
 
         return logit, loss
 
+    @staticmethod
+    def _as_probability(output: torch.Tensor) -> torch.Tensor:
+        if torch.all(output >= 0):
+            row_sums = output.sum(dim=1, keepdim=True)
+            if torch.all(row_sums > 0):
+                return output / row_sums.clamp_min(1e-12)
+        return torch.softmax(output, dim=-1)
+
+    @staticmethod
+    def _probability_stats(prob: torch.Tensor) -> dict:
+        top2 = prob.topk(k=min(2, prob.size(1)), dim=1).values
+        margin = top2[:, 0] - top2[:, 1] if top2.size(1) > 1 else top2[:, 0]
+        entropy = -(prob * torch.log(prob.clamp_min(1e-8))).sum(dim=1)
+        return {
+            "conf_sum": top2[:, 0].sum().item(),
+            "margin_sum": margin.sum().item(),
+            "entropy_sum": entropy.sum().item(),
+        }
+
+    def _init_analytic_eval_metrics(self) -> dict:
+        return {
+            "total": 0,
+            "analytic_correct": 0.0,
+            "temporal_correct": 0.0,
+            "agreement": 0.0,
+            "analytic_correct_temporal_wrong": 0.0,
+            "temporal_correct_analytic_wrong": 0.0,
+            "output_conf_sum": 0.0,
+            "output_margin_sum": 0.0,
+            "output_entropy_sum": 0.0,
+            "temporal_conf_sum": 0.0,
+            "temporal_margin_sum": 0.0,
+            "temporal_entropy_sum": 0.0,
+            "analytic_conf_sum": 0.0,
+            "analytic_margin_sum": 0.0,
+            "analytic_entropy_sum": 0.0,
+            "rp_task_conf_sum": 0.0,
+            "rp_task_margin_sum": 0.0,
+            "rp_task_entropy_sum": 0.0,
+        }
+
+    def _analytic_gain_lambda(self, task_id=None) -> float:
+        lambda_max = float(getattr(self, "analytic_gain_max_lambda", 0.5))
+        if lambda_max == 0.0:
+            return 0.0
+
+        schedule = getattr(self, "analytic_gain_schedule", "quadratic")
+        if schedule == "constant" or self.n_tasks <= 1:
+            progress = 1.0
+        else:
+            if task_id is None or int(task_id) < 0:
+                stage = int(getattr(self.model_without_ddp, "task_count", self.task_id))
+            else:
+                stage = int(task_id)
+            progress = max(0.0, min(1.0, stage / max(self.n_tasks - 1, 1)))
+
+        if schedule == "quadratic":
+            scale = progress * progress
+        elif schedule == "linear":
+            scale = progress
+        elif schedule == "constant":
+            scale = 1.0
+        else:
+            raise ValueError(f"Unknown analytic gain schedule: {schedule}")
+        return lambda_max * scale
+
+    @staticmethod
+    def _analytic_zscore_gain_scores(analytic_logits: torch.Tensor) -> torch.Tensor:
+        valid = torch.isfinite(analytic_logits)
+        safe_logits = torch.where(valid, analytic_logits, torch.zeros_like(analytic_logits))
+        counts = valid.sum(dim=1, keepdim=True).clamp_min(1).to(analytic_logits.dtype)
+        mean = safe_logits.sum(dim=1, keepdim=True) / counts
+        centered = torch.where(valid, analytic_logits - mean, torch.zeros_like(analytic_logits))
+        var = (centered.square().sum(dim=1, keepdim=True) / counts).clamp_min(1e-12)
+        scores = centered / torch.sqrt(var)
+        return torch.where(valid, scores, torch.full_like(scores, -10.0))
+
+    def _apply_analytic_dan_gain(
+        self,
+        temporal_output: torch.Tensor,
+        analytic_logits: torch.Tensor,
+        task_id=None,
+    ) -> torch.Tensor:
+        lam = self._analytic_gain_lambda(task_id=task_id)
+        if lam == 0.0:
+            return temporal_output
+        temporal_prob = self._as_probability(temporal_output)
+        gain_scores = self._analytic_zscore_gain_scores(analytic_logits + self.mask)
+        return torch.log(temporal_prob.clamp_min(1e-12)) + lam * gain_scores
+
+    def _update_analytic_eval_metrics(
+        self,
+        metrics: dict,
+        y: torch.Tensor,
+        output_prob: torch.Tensor,
+        temporal_prob: torch.Tensor,
+        analytic_logits: torch.Tensor,
+        rp_logits: torch.Tensor,
+    ) -> None:
+        analytic_prob = torch.softmax(analytic_logits + self.mask, dim=-1)
+        rp_seen = rp_logits[:, : self.model_without_ddp.task_count + 1]
+        rp_prob = torch.softmax(rp_seen, dim=-1)
+
+        output_pred = torch.argmax(output_prob, dim=-1)
+        temporal_pred = torch.argmax(temporal_prob, dim=-1)
+        analytic_pred = torch.argmax(analytic_prob, dim=-1)
+        temporal_correct = temporal_pred.eq(y)
+        analytic_correct = analytic_pred.eq(y)
+
+        batch_size = y.size(0)
+        metrics["total"] += batch_size
+        metrics["analytic_correct"] += analytic_correct.sum().item()
+        metrics["temporal_correct"] += temporal_correct.sum().item()
+        metrics["agreement"] += output_pred.eq(analytic_pred).sum().item()
+        metrics["analytic_correct_temporal_wrong"] += (analytic_correct & ~temporal_correct).sum().item()
+        metrics["temporal_correct_analytic_wrong"] += (temporal_correct & ~analytic_correct).sum().item()
+
+        for prefix, prob in (
+            ("output", output_prob),
+            ("temporal", temporal_prob),
+            ("analytic", analytic_prob),
+            ("rp_task", rp_prob),
+        ):
+            stats = self._probability_stats(prob)
+            metrics[f"{prefix}_conf_sum"] += stats["conf_sum"]
+            metrics[f"{prefix}_margin_sum"] += stats["margin_sum"]
+            metrics[f"{prefix}_entropy_sum"] += stats["entropy_sum"]
+
+    def _sync_analytic_eval_metrics(self, metrics: dict) -> dict:
+        if not self.distributed:
+            return metrics
+        keys = [
+            "total",
+            "analytic_correct",
+            "temporal_correct",
+            "agreement",
+            "analytic_correct_temporal_wrong",
+            "temporal_correct_analytic_wrong",
+            "output_conf_sum",
+            "output_margin_sum",
+            "output_entropy_sum",
+            "temporal_conf_sum",
+            "temporal_margin_sum",
+            "temporal_entropy_sum",
+            "analytic_conf_sum",
+            "analytic_margin_sum",
+            "analytic_entropy_sum",
+            "rp_task_conf_sum",
+            "rp_task_margin_sum",
+            "rp_task_entropy_sum",
+        ]
+        values = torch.tensor([float(metrics[key]) for key in keys], device=self.device)
+        dist.reduce(values, dst=0, op=dist.ReduceOp.SUM)
+        if self.is_main_process():
+            for key, value in zip(keys, values.tolist()):
+                metrics[key] = value
+        return metrics
+
+    def _finalize_analytic_eval_metrics(self, metrics: dict, task_id=None, end=False) -> dict:
+        metrics = self._sync_analytic_eval_metrics(metrics)
+        total = max(metrics["total"], 1)
+        out = {
+            "task_id": -1 if task_id is None else int(task_id),
+            "end": bool(end),
+            "num_samples": int(metrics["total"]),
+            "analytic_gain_lambda": self._analytic_gain_lambda(task_id=task_id) if getattr(self, "use_analytic_gain", False) else 0.0,
+            "analytic_acc": metrics["analytic_correct"] / total,
+            "temporal_acc": metrics["temporal_correct"] / total,
+            "output_analytic_top1_agreement": metrics["agreement"] / total,
+            "analytic_correct_temporal_wrong": metrics["analytic_correct_temporal_wrong"] / total,
+            "temporal_correct_analytic_wrong": metrics["temporal_correct_analytic_wrong"] / total,
+        }
+        for prefix in ("output", "temporal", "analytic", "rp_task"):
+            out[f"{prefix}_conf_mean"] = metrics[f"{prefix}_conf_sum"] / total
+            out[f"{prefix}_margin_mean"] = metrics[f"{prefix}_margin_sum"] / total
+            out[f"{prefix}_entropy_mean"] = metrics[f"{prefix}_entropy_sum"] / total
+        return out
+
+    def _record_analytic_eval_metrics(self, metrics: dict) -> None:
+        if not self.is_main_process():
+            return
+        if not hasattr(self, "analytic_eval_records"):
+            self.analytic_eval_records = []
+        metrics = dict(metrics)
+        metrics["eval_index"] = len(self.analytic_eval_records)
+        self.analytic_eval_records.append(metrics)
+        path = f"{self.log_dir}/seed_{self.rnd_seed}_flyprompt_analytic_eval.npz"
+        keys = sorted({key for row in self.analytic_eval_records for key in row.keys()})
+        payload = {}
+        for key in keys:
+            values = [row.get(key, np.nan) for row in self.analytic_eval_records]
+            if key == "end":
+                payload[key] = np.array(values, dtype=bool)
+            elif key in {"num_samples", "task_id", "eval_index"}:
+                payload[key] = np.array(values, dtype=np.int64)
+            else:
+                payload[key] = np.array(values, dtype=np.float64)
+        np.savez(path, **payload)
+
     def online_evaluate(self, test_loader, task_id=None, end=False):
         total_correct, total_num_data, total_loss = 0.0, 0.0, 0.0
         correct_l = torch.zeros(self.n_classes)
         num_data_l = torch.zeros(self.n_classes)
-        label = []
+        use_analytic = bool(getattr(self, "use_analytic_head", False))
+        use_analytic_gain = use_analytic and bool(getattr(self, "use_analytic_gain", False))
+        analytic_metrics = self._init_analytic_eval_metrics() if use_analytic else None
 
         self.model_without_ddp.update()
 
@@ -140,12 +342,23 @@ class FlyPrompt(_Trainer):
                 expert_ids = torch.argmax(logit_raw, dim=-1)
 
                 if getattr(self, "no_ema_ensemble", False):
-                    logit = self.model_without_ddp(x, expert_ids=expert_ids)
-                    logit = logit + self.mask
+                    temporal_output = self.model_without_ddp(x, expert_ids=expert_ids)
+                    temporal_output = temporal_output + self.mask
                 else:
                     logit_ls = self.model_without_ddp.forward_with_ema(x, expert_ids=expert_ids)
                     logit_ls = [logit + self.mask for logit in logit_ls]
-                    logit = self._ensemble_logits(logit_ls)
+                    temporal_output = self._ensemble_logits(logit_ls)
+
+                analytic_logits = None
+                logit = temporal_output
+                if use_analytic:
+                    analytic_logits = self.model_without_ddp.forward_with_analytic(x)
+                    if use_analytic_gain:
+                        logit = self._apply_analytic_dan_gain(
+                            temporal_output,
+                            analytic_logits,
+                            task_id=task_id,
+                        )
 
                 loss = self.criterion(logit, y)
                 pred = torch.argmax(logit, dim=-1)
@@ -153,18 +366,36 @@ class FlyPrompt(_Trainer):
                 total_correct += torch.sum(preds == y.unsqueeze(1)).item()
                 total_num_data += y.size(0)
 
+                if use_analytic:
+                    output_prob = self._as_probability(logit)
+                    temporal_prob = self._as_probability(temporal_output)
+                    self._update_analytic_eval_metrics(
+                        analytic_metrics,
+                        y=y,
+                        output_prob=output_prob,
+                        temporal_prob=temporal_prob,
+                        analytic_logits=analytic_logits,
+                        rp_logits=logit_raw,
+                    )
+
                 xlabel_cnt, correct_xlabel_cnt = self._interpret_pred(y, pred)
                 correct_l += correct_xlabel_cnt.detach().cpu()
                 num_data_l += xlabel_cnt.detach().cpu()
 
                 total_loss += loss.item()
-                label += y.tolist()
 
         avg_acc = total_correct / total_num_data
         avg_loss = total_loss / len(test_loader)
         cls_acc = (correct_l / (num_data_l + 1e-5)).numpy().tolist()
 
         eval_dict = {"avg_loss": avg_loss, "avg_acc": avg_acc, "cls_acc": cls_acc}
+        if use_analytic:
+            analytic_summary = self._finalize_analytic_eval_metrics(analytic_metrics, task_id=task_id, end=end)
+            analytic_summary["output_acc"] = avg_acc
+            analytic_summary["flyprompt_acc"] = avg_acc
+            self._record_analytic_eval_metrics(analytic_summary)
+            if self.is_main_process():
+                logger.info("[FlyPrompt Analytic] %s", analytic_summary)
         return eval_dict
 
     def _ensemble_logits(self, logit_ls):

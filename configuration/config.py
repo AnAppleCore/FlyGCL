@@ -83,6 +83,14 @@ def base_parser():
                         help="Subspace rank for whitened subspace router.")
     parser.add_argument("--no_ema_ensemble", action="store_true", default=False,
                         help="Disable EMA head bank for FlyPrompt (only): skip EMA updates during training and use only the online fc head at evaluation.")
+    parser.add_argument("--use_analytic_head", action="store_true", default=False,
+                        help="Enable FlyPrompt frozen-feature analytic class head and extra per-eval diagnostics.")
+    parser.add_argument("--use_analytic_gain", action="store_true", default=False,
+                        help="Use stage-dependent analytic DAN gain as the FlyPrompt evaluation output.")
+    parser.add_argument("--analytic_gain_max_lambda", type=float, default=0.5,
+                        help="Maximum strength for the stage-dependent analytic DAN gain.")
+    parser.add_argument("--analytic_gain_schedule", type=str, default="quadratic", choices=["quadratic", "linear", "constant"],
+                        help="Stage schedule for analytic DAN gain strength.")
 
     # ========== RPFC gating configurations ==========
     parser.add_argument("--use_rp_gate", action="store_true", default=False,

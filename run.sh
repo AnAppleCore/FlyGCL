@@ -106,9 +106,14 @@ start_group_custom() {
     local seed_list_str=$5
     local dataset=${6:-$DATASET}  # Use provided dataset or global DATASET variable
 
-    # Shift to expose any additional arguments as extra args to forward
+    # Shift to expose any additional arguments as extra args to forward.
+    # Accept an optional "--" separator for consistency with start_group.
     shift 6
-    local extra_args=("$@")
+    local extra_args=()
+    if [ "${1:-}" = "--" ]; then
+        shift
+    fi
+    extra_args=("$@")
 
     # Convert string representations to arrays
     IFS=' ' read -ra gpu_list <<< "$gpu_list_str"
