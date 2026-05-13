@@ -69,6 +69,8 @@ def base_parser():
 
     # ============= MISA configurations ============
     parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
+    parser.add_argument('--flyprompt_pt_path', type=str, default='./checkpoints/flyprompt_misa_prompt.pt',
+                        help='Path to MISA-style pretrained FlyPrompt prompt checkpoint.')
 
     # ============= MEPO configurations ============
     parser.add_argument('--mepo_backbone_path', type=str, default=None,
