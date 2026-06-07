@@ -56,9 +56,11 @@ class Prompt(nn.Module):
         prompts = self._build_batched_prompts(backbone, expert_ids)  # [B, num_layers, len_prompt, D]
 
         for n, block in enumerate(backbone.blocks):
-            pos_n = (self.pos_prompt.eq(n)).nonzero(as_tuple=False).squeeze()
+            pos_n = (self.pos_prompt.eq(n)).nonzero(as_tuple=False).flatten()
             if pos_n.numel() != 0:
-                x = torch.cat((x, prompts[:, pos_n]), dim=1)
+                prompt_tokens = prompts.index_select(dim=1, index=pos_n.to(prompts.device))
+                prompt_tokens = prompt_tokens.flatten(start_dim=1, end_dim=2)
+                x = torch.cat((x, prompt_tokens), dim=1)
             x = block(x)
             x = x[:, :orig_N, :]
 
@@ -298,6 +300,8 @@ class FlyPrompt(nn.Module):
                  ema_ratio      : Iterable[float] = (0.9, 0.99),
                  router_type    : str   = "rpfc",
                  ws_k           : int   = 32,
+                 load_pt        : bool  = False,
+                 flyprompt_pt_path: str = './checkpoints/flyprompt_misa_prompt.pt',
                  **kwargs):
 
         super().__init__()
@@ -313,6 +317,8 @@ class FlyPrompt(nn.Module):
         self.num_ema = len(ema_ratio)
         self.router_type = router_type
         self.use_analytic_head = bool(kwargs.get("use_analytic_head", False))
+        self.load_pt = load_pt
+        self.flyprompt_pt_path = flyprompt_pt_path
 
         self.task_count = 0
 
@@ -337,6 +343,7 @@ class FlyPrompt(nn.Module):
             embed_dim = self.embed_dim,
             pos_prompt = self.pos_prompt,
         )
+        self.load_prompt(load_pt=self.load_pt, prompt_path=self.flyprompt_pt_path)
 
         # Expert FCs
         self.experts_fc = nn.ModuleList([
@@ -462,3 +469,74 @@ class FlyPrompt(nn.Module):
         self.rp_head.update()
         self.experts.init_new_expert(self.task_count)
         self.init_fc(self.task_count)
+        
+    def load_prompt(self, load_pt: bool = False, prompt_path: str = None):
+        if not load_pt:
+            return
+        if prompt_path is None:
+            raise ValueError("prompt_path must be specified when load_pt=True for FlyPrompt.")
+
+        logger.info(f'Loading FlyPrompt pretrained prompt from {prompt_path}')
+        checkpoint = torch.load(prompt_path, map_location="cpu")
+        if isinstance(checkpoint, dict):
+            prompt = checkpoint.get("prompts", None)
+            base_prompt = checkpoint.get("base_prompt", None)
+            ckpt_len_prompt = checkpoint.get("len_prompt", None)
+            ckpt_pos_prompt = checkpoint.get("pos_prompt", None)
+            ckpt_embed_dim = checkpoint.get("embed_dim", None)
+        else:
+            prompt = checkpoint
+            base_prompt = None
+            ckpt_len_prompt = None
+            ckpt_pos_prompt = None
+            ckpt_embed_dim = None
+
+        if prompt is None:
+            raise ValueError(f"No 'prompts' tensor found in FlyPrompt checkpoint: {prompt_path}")
+        if ckpt_len_prompt is not None and int(ckpt_len_prompt) != int(self.len_prompt):
+            raise ValueError(f"FlyPrompt prompt length mismatch: checkpoint={ckpt_len_prompt}, model={self.len_prompt}")
+        if ckpt_embed_dim is not None and int(ckpt_embed_dim) != int(self.embed_dim):
+            raise ValueError(f"FlyPrompt embed_dim mismatch: checkpoint={ckpt_embed_dim}, model={self.embed_dim}")
+        if ckpt_pos_prompt is not None and list(ckpt_pos_prompt) != list(self.pos_prompt):
+            raise ValueError(f"FlyPrompt pos_prompt mismatch: checkpoint={ckpt_pos_prompt}, model={list(self.pos_prompt)}")
+
+        prompt = prompt.detach().clone()
+        if prompt.dim() == 3:
+            prompt = prompt.unsqueeze(1)
+        if prompt.dim() != 4:
+            raise ValueError(f"Expected FlyPrompt prompt tensor with 3 or 4 dims, got shape {tuple(prompt.shape)}")
+
+        expected_prefix = (self.experts.num_layers, self.len_prompt, self.embed_dim)
+        if (prompt.size(0), prompt.size(2), prompt.size(3)) != expected_prefix:
+            raise ValueError(
+                "FlyPrompt prompt shape mismatch: "
+                f"checkpoint={tuple(prompt.shape)}, expected (* experts) prefix={expected_prefix}"
+            )
+
+        ckpt_experts = prompt.size(1)
+        if ckpt_experts == self.task_num:
+            expanded = prompt
+        elif ckpt_experts == 1:
+            expanded = prompt.repeat(1, self.task_num, 1, 1)
+        elif ckpt_experts < self.task_num:
+            if base_prompt is not None:
+                fill = base_prompt.detach().clone()
+                if fill.dim() == 3:
+                    fill = fill.unsqueeze(1)
+                if fill.dim() != 4:
+                    raise ValueError(f"Expected base_prompt with 3 or 4 dims, got shape {tuple(fill.shape)}")
+                if (fill.size(0), fill.size(2), fill.size(3)) != expected_prefix:
+                    raise ValueError(
+                        "FlyPrompt base_prompt shape mismatch: "
+                        f"checkpoint={tuple(fill.shape)}, expected (* experts) prefix={expected_prefix}"
+                    )
+                fill = fill[:, :1]
+            else:
+                fill = prompt.mean(dim=1, keepdim=True)
+            pad = fill.repeat(1, self.task_num - ckpt_experts, 1, 1)
+            expanded = torch.cat([prompt, pad], dim=1)
+        else:
+            expanded = prompt[:, :self.task_num]
+
+        self.experts.prompts = nn.Parameter(expanded.to(self.experts.prompts.device))
+        logger.info(f'Loaded FlyPrompt prompt shape {tuple(self.experts.prompts.shape)}')
