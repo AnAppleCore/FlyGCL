@@ -8,6 +8,8 @@ from .slca import SLCA
 from .hide_norga_trainer import HiDeGCLTrainer, NoRGaGCLTrainer
 from .sdlora import SDLoRAGCL
 from .sprompt import SPrompt as SPromptTrainer
+from .ewc import EWC
+from .lwf import LwF
 
 METHODS = {
     "codaprompt": CodaPrompt,
@@ -23,4 +25,6 @@ METHODS = {
     "norga": NoRGaGCLTrainer,
     "sdlora": SDLoRAGCL,
     "sprompt": SPromptTrainer,
+    "ewc": EWC,
+    "lwf": LwF,
 }

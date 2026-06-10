@@ -47,6 +47,15 @@ def base_parser():
     # ============= ViT configurations =============
     parser.add_argument('--profile', action='store_true', default=False, help='enable profiling for ViT_Prompt')
 
+    # ============= EWC / LwF configurations ============
+    parser.add_argument("--ewc_lambda", type=float, default=1000.0, help="EWC regularization strength.")
+    parser.add_argument("--ewc_gamma", type=float, default=1.0, help="Decay for consolidated EWC Fisher before adding the current task Fisher.")
+    parser.add_argument("--ewc_fisher_on_gpu", action=argparse.BooleanOptionalAction, default=True, help="Store EWC Fisher and parameter snapshot on GPU.")
+    parser.add_argument("--ewc_empirical_labels", action=argparse.BooleanOptionalAction, default=True, help="Use ground-truth labels for empirical Fisher; otherwise use model predictions.")
+    parser.add_argument("--lwf_lambda", type=float, default=1.0, help="LwF distillation loss weight.")
+    parser.add_argument("--lwf_temperature", type=float, default=2.0, help="Temperature for LwF knowledge distillation.")
+    parser.add_argument("--lwf_teacher_on_gpu", action=argparse.BooleanOptionalAction, default=True, help="Keep the frozen LwF teacher model on GPU.")
+
     # ============= MISA configurations ============
     parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
     parser.add_argument('--flyprompt_pt_path', type=str, default='./checkpoints/flyprompt_misa_prompt.pt',

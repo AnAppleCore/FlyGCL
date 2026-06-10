@@ -9,6 +9,7 @@ from .hide_lora_vit import HiDeLoRAModel
 from .hide_adapter_vit import HiDeAdapterModel
 from .sdlora import SDLoRAModel
 from .sprompt import SPrompt
+from .finetune_vit import FinetuneViT
 
 MODELS = {
     "codaprompt": CodaPrompt,
@@ -23,4 +24,6 @@ MODELS = {
     "norga": NoRGaPrefixModel,
     "sdlora": SDLoRAModel,
     "sprompt": SPrompt,
+    "ewc": FinetuneViT,
+    "lwf": FinetuneViT,
 }
