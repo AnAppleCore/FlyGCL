@@ -26,4 +26,7 @@ MODELS = {
     "sprompt": SPrompt,
     "ewc": FinetuneViT,
     "lwf": FinetuneViT,
+    "seq_finetune": FinetuneViT,
+    "linear_probe": FinetuneViT,
+    "seq_finetune_small_lr": FinetuneViT,
 }

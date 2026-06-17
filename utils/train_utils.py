@@ -40,6 +40,29 @@ def select_optimizer(opt_name, lr, model):
         opt = optim.SGD(
             model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=1e-4
         )
+    elif opt_name == "adam_head_default_backbone_100x_small":
+        head_markers = (
+            "backbone.fc.",
+            "backbone.head.",
+            "backbone.classifier.",
+            "fc.",
+            "head.",
+            "classifier.",
+        )
+        head_params = []
+        backbone_params = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if any(marker in name for marker in head_markers):
+                    head_params.append(param)
+                else:
+                    backbone_params.append(param)
+        if len(head_params) == 0:
+            raise ValueError("No classifier head parameters found for adam_head_default_backbone_100x_small")
+        opt = optim.Adam([
+            {"params": backbone_params, "lr": lr / 100.0},
+            {"params": head_params, "lr": lr},
+        ], weight_decay=0)
     elif opt_name == 'sgd_sl':
         fc_params = []
         other_params = []

@@ -10,6 +10,7 @@ from .sdlora import SDLoRAGCL
 from .sprompt import SPrompt as SPromptTrainer
 from .ewc import EWC
 from .lwf import LwF
+from .seq_baselines import LinearProbe, SeqFinetune, SeqFinetuneSmallLR
 
 METHODS = {
     "codaprompt": CodaPrompt,
@@ -27,4 +28,7 @@ METHODS = {
     "sprompt": SPromptTrainer,
     "ewc": EWC,
     "lwf": LwF,
+    "seq_finetune": SeqFinetune,
+    "linear_probe": LinearProbe,
+    "seq_finetune_small_lr": SeqFinetuneSmallLR,
 }
