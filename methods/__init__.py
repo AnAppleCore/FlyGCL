@@ -16,6 +16,8 @@ METHODS = {
     "codaprompt": CodaPrompt,
     "dualprompt": DualPrompt,
     "flyprompt": FlyPrompt,
+    "flyadapter": FlyPrompt,
+    "flylora": FlyPrompt,
     "l2p": L2P,
     "mvp": MVP,
     "ranpac": RanPAC,

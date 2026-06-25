@@ -1,6 +1,7 @@
 from .codaprompt import CodaPrompt
 from .dualprompt import DualPrompt
 from .flyprompt import FlyPrompt
+from .flyprompt_variants import FlyAdapter, FlyLoRA
 from .l2p import L2P
 from .mvp import MVP
 from .ranpac import RanPAC
@@ -15,6 +16,8 @@ MODELS = {
     "codaprompt": CodaPrompt,
     "dualprompt": DualPrompt,
     "flyprompt": FlyPrompt,
+    "flyadapter": FlyAdapter,
+    "flylora": FlyLoRA,
     "l2p": L2P,
     "mvp": MVP,
     "ranpac": RanPAC,

@@ -232,18 +232,82 @@ echo "========================================="
 # Note: You can still tweak defaults in scripts/common_baselines.sh, or override via extra args.
 # -----------------------------------------------------------------------------
 
-for BACKBONE_TO_RUN in vit_base_patch16_224 vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3; do
-for DATASET_TO_RUN in  cifar100 imagenet-r cub200; do
-for METHOD_TO_RUN in flyprompt l2p dualprompt codaprompt mvp ranpac; do
-for N_TASKS_TO_RUN in 5; do
+# for BACKBONE_TO_RUN in vit_base_patch16_224 vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3; do
+# for DATASET_TO_RUN in  cifar100 imagenet-r cub200; do
+# for METHOD_TO_RUN in flyprompt l2p dualprompt codaprompt mvp ranpac; do
+# for N_TASKS_TO_RUN in 5; do
 
-start_group "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_standard" $DATASET_TO_RUN 0 1 2 3 4 \
--- --backbone $BACKBONE_TO_RUN --n_tasks $N_TASKS_TO_RUN
+# start_group "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_standard" $DATASET_TO_RUN 0 1 2 3 4 \
+# -- --backbone $BACKBONE_TO_RUN --n_tasks $N_TASKS_TO_RUN
 
-wait_for_group_completion "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard"
+# wait_for_group_completion "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard"
 
-done
-done
+# done
+# done
+# done
+# done
+
+# FlyPrompt analytic DAN gain full rerun.
+# Uses stage-dependent z-scored analytic evidence as a multiplicative class gain.
+# Runs all five seeds in one parallel batch on GPUs 0/1/2/3/5.
+# Override with, for example: ANALYTIC_DAN_GPU_LIST="0 1 2 3 5" bash run.sh
+# ANALYTIC_DAN_GPU_LIST=${ANALYTIC_DAN_GPU_LIST:-"0 1 2 3 5"}
+# ANALYTIC_DAN_SEEDS="1 2 3 4 5"
+# ANALYTIC_DAN_BATCH_ID=1
+#
+# for BACKBONE_TO_RUN in vit_base_patch16_224; do
+# for DATASET_TO_RUN in cifar100 imagenet-r cub200; do
+# for METHOD_TO_RUN in flyprompt; do
+# for N_TASKS_TO_RUN in 5; do
+#
+# GROUP_NAME="${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_analytic_dan_gain_batch${ANALYTIC_DAN_BATCH_ID}"
+# start_group_custom "$GROUP_NAME" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_analytic_dan_gain" \
+#     "$ANALYTIC_DAN_GPU_LIST" "$ANALYTIC_DAN_SEEDS" "$DATASET_TO_RUN" \
+#     -- --backbone "$BACKBONE_TO_RUN" --n_tasks "$N_TASKS_TO_RUN" \
+#        --use_analytic_head --use_analytic_gain \
+#        --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic
+#
+# wait_for_group_completion "$GROUP_NAME"
+# ((ANALYTIC_DAN_BATCH_ID++))
+#
+# done
+# done
+# done
+# done
+
+# -----------------------------------------------------------------------------
+# FlyPrompt MISA-pretrain + analytic DAN gain sweep.
+# Loads MISA-pretrained prompt checkpoints (epoch=22 and epoch=25, directions
+# add / sub) and enables analytic DAN gain with the default parameters. For each
+# dataset and epoch, add runs first and sub runs after add finishes. Each
+# direction launches 5 seeds concurrently on GPUs 0/1/2/3, where GPUs 0/1/2 run
+# one seed each and GPU 3 runs two seeds.
+# -----------------------------------------------------------------------------
+MISA_GPU_LIST="0 1 2 3 3"
+MISA_SEEDS="1 2 3 4 5"
+MISA_CKPT_ROOT="./checkpoints/FlyPrompt_MISA_Pretrain_Prompt"
+
+for MISA_DATASET in cifar100 imagenet-r cub200; do
+for MISA_EPOCH in 022 025; do
+    for MISA_DIR in add sub; do
+        MISA_CKPT="${MISA_CKPT_ROOT}/flyprompt_misa_${MISA_DIR}_ddp_bs256_ep32_seed1/epoch_${MISA_EPOCH}/flyprompt_misa_prompt_${MISA_DIR}_ddp_bs256_ep32_seed1.pt"
+        if [ ! -f "$MISA_CKPT" ]; then
+            echo "missing checkpoint: $MISA_CKPT"
+            exit 1
+        fi
+
+        start_group_custom "misa_dan_${MISA_DATASET}_ep${MISA_EPOCH}_${MISA_DIR}_" \
+            "./scripts/run_baselines_flyprompt.sh" \
+            "tasks5_analytic_dan_gain_misa_${MISA_DIR}_ep${MISA_EPOCH}" \
+            "$MISA_GPU_LIST" "$MISA_SEEDS" "$MISA_DATASET" \
+            -- --backbone vit_base_patch16_224 --n_tasks 5 \
+               --use_analytic_head --use_analytic_gain \
+               --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic \
+               --load_pt --flyprompt_pt_path "$MISA_CKPT"
+
+        # Run add and sub sequentially to avoid doubling per-GPU concurrency.
+        wait_for_group_completion "misa_dan_${MISA_DATASET}_ep${MISA_EPOCH}_${MISA_DIR}_"
+    done
 done
 done
 

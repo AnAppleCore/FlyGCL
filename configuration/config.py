@@ -103,6 +103,18 @@ def base_parser():
     parser.add_argument("--analytic_gain_schedule", type=str, default="quadratic", choices=["quadratic", "linear", "constant"],
                         help="Stage schedule for analytic DAN gain strength.")
 
+    # ========== FlyAdapter / FlyLoRA configurations ==========
+    parser.add_argument("--fly_lora_rank", type=int, default=5,
+                        help="LoRA rank for FlyLoRA expert modules.")
+    parser.add_argument("--fly_lora_alpha", type=float, default=1.0,
+                        help="Scaling factor alpha for FlyLoRA expert modules.")
+    parser.add_argument("--fly_lora_layers", type=int, default=5,
+                        help="Number of early ViT blocks using FlyLoRA K/V experts.")
+    parser.add_argument("--fly_adapter_down_dim", type=int, default=10,
+                        help="Adapter bottleneck dimension for FlyAdapter expert modules.")
+    parser.add_argument("--fly_adapter_layers", type=int, default=5,
+                        help="Number of early ViT blocks using FlyAdapter experts.")
+
     # ========== RPFC gating configurations ==========
     parser.add_argument("--use_rp_gate", action="store_true", default=False,
                         help="Use FlyPrompt-style RPFC head for task gating in compatible methods (e.g., SPrompt, HiDe/NoRGa, DualPrompt, MVP).")

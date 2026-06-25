@@ -16,6 +16,8 @@ from torch.utils.data.distributed import DistributedSampler
 from torchvision import datasets, transforms
 
 import models.vit  # noqa: F401
+from models.experts import LoRAExpert
+from models.flyprompt_variants import FlyAdapterExpert
 
 
 logging.basicConfig(
@@ -164,9 +166,16 @@ class FlyPromptMISAInitModel(nn.Module):
         len_prompt: int,
         pos_prompt: Iterable[int],
         aug_hidden_dim: int = None,
+        expert_type: str = "prompt",
+        fly_lora_rank: int = 5,
+        fly_lora_alpha: float = 1.0,
+        fly_lora_layers: int = 5,
+        fly_adapter_down_dim: int = 10,
+        fly_adapter_layers: int = 5,
     ):
         super().__init__()
         self.backbone_name = backbone_name
+        self.expert_type = expert_type
         self.len_prompt = len_prompt
         self.register_buffer("pos_prompt", torch.tensor(list(pos_prompt), dtype=torch.int64))
         self.num_layers = int(self.pos_prompt.numel())
@@ -176,14 +185,38 @@ class FlyPromptMISAInitModel(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = False
 
-        self.prompt = nn.Parameter(torch.empty(self.num_layers, 1, len_prompt, self.embed_dim))
-        nn.init.uniform_(self.prompt)
-
         hidden_dim = aug_hidden_dim or self.embed_dim
-        self.prompt_augmenter = PromptAugmenter(self.embed_dim, hidden_dim)
+        if self.expert_type == "prompt":
+            self.prompt = nn.Parameter(torch.empty(self.num_layers, 1, len_prompt, self.embed_dim))
+            nn.init.uniform_(self.prompt)
+            self.prompt_augmenter = PromptAugmenter(self.embed_dim, hidden_dim)
+            self.expert = None
+        elif self.expert_type == "adapter":
+            self.prompt = None
+            self.prompt_augmenter = None
+            self.expert = FlyAdapterExpert(
+                num_experts=1,
+                embed_dim=self.embed_dim,
+                num_adapter_layers=fly_adapter_layers,
+                adapter_down_dim=fly_adapter_down_dim,
+            )
+        elif self.expert_type == "lora":
+            self.prompt = None
+            self.prompt_augmenter = None
+            self.expert = LoRAExpert(
+                num_experts=1,
+                embed_dim=self.embed_dim,
+                num_lora_layers=fly_lora_layers,
+                lora_rank=fly_lora_rank,
+                lora_alpha=fly_lora_alpha,
+            )
+        else:
+            raise ValueError(f"Unsupported expert_type: {self.expert_type}")
         self.classifier = nn.Linear(self.embed_dim, num_init_classes)
 
     def get_augmented_prompt(self) -> torch.Tensor:
+        if self.expert_type != "prompt":
+            raise RuntimeError("get_augmented_prompt is only available for prompt expert pretraining.")
         return self.prompt_augmenter(self.prompt)
 
     def _build_batched_prompts(self, batch_size: int) -> torch.Tensor:
@@ -218,8 +251,15 @@ class FlyPromptMISAInitModel(nn.Module):
         x = self.backbone.norm(x)
         return x[:, 0]
 
+    def forward_features_with_expert(self, inputs: torch.Tensor) -> torch.Tensor:
+        expert_ids = torch.zeros(inputs.size(0), dtype=torch.long, device=inputs.device)
+        return self.expert(self.backbone, inputs, expert_ids)
+
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        features = self.forward_features_with_prompt(inputs)
+        if self.expert_type == "prompt":
+            features = self.forward_features_with_prompt(inputs)
+        else:
+            features = self.forward_features_with_expert(inputs)
         return self.classifier(features)
 
 
@@ -386,13 +426,9 @@ def save_prompt_checkpoint(
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
     model_to_save = model.module if isinstance(model, DDP) else model
-    base_prompt = model_to_save.get_augmented_prompt().detach().cpu()
     checkpoint = {
-        "prompts": base_prompt,
-        "base_prompt": base_prompt,
+        "expert_type": args.expert_type,
         "num_experts": 1,
-        "len_prompt": args.len_prompt,
-        "pos_prompt": list(args.pos_prompt),
         "embed_dim": model_to_save.embed_dim,
         "backbone": args.backbone,
         "init_method": "flyprompt_misa_isa_fam_aug",
@@ -403,9 +439,28 @@ def save_prompt_checkpoint(
         "ood_classes": list(range(args.num_id_classes, args.num_init_classes)),
         "class_to_idx": metadata_dataset.class_to_idx,
     }
-    torch.save(checkpoint, save_path)
-    logger.info("Saved FlyPrompt MISA prompt checkpoint to %s", save_path)
-    logger.info("Saved base prompt shape: %s", tuple(base_prompt.shape))
+    if args.expert_type == "prompt":
+        base_prompt = model_to_save.get_augmented_prompt().detach().cpu()
+        checkpoint.update({
+            "prompts": base_prompt,
+            "base_prompt": base_prompt,
+            "len_prompt": args.len_prompt,
+            "pos_prompt": list(args.pos_prompt),
+        })
+        torch.save(checkpoint, save_path)
+        logger.info("Saved FlyPrompt MISA prompt checkpoint to %s", save_path)
+        logger.info("Saved base prompt shape: %s", tuple(base_prompt.shape))
+    else:
+        checkpoint.update({
+            "expert_state_dict": {k: v.detach().cpu() for k, v in model_to_save.expert.state_dict().items()},
+            "fly_lora_rank": args.fly_lora_rank,
+            "fly_lora_alpha": args.fly_lora_alpha,
+            "fly_lora_layers": args.fly_lora_layers,
+            "fly_adapter_down_dim": args.fly_adapter_down_dim,
+            "fly_adapter_layers": args.fly_adapter_layers,
+        })
+        torch.save(checkpoint, save_path)
+        logger.info("Saved FlyPrompt MISA %s expert checkpoint to %s", args.expert_type, save_path)
 
 
 def reduce_scalar(value: float, device: torch.device, average: bool = True) -> float:
@@ -428,6 +483,12 @@ def train(args):
         len_prompt=args.len_prompt,
         pos_prompt=args.pos_prompt,
         aug_hidden_dim=args.aug_hidden_dim,
+        expert_type=args.expert_type,
+        fly_lora_rank=args.fly_lora_rank,
+        fly_lora_alpha=args.fly_lora_alpha,
+        fly_lora_layers=args.fly_lora_layers,
+        fly_adapter_down_dim=args.fly_adapter_down_dim,
+        fly_adapter_layers=args.fly_adapter_layers,
     ).to(device)
     model_embed_dim = model.embed_dim
 
@@ -447,7 +508,7 @@ def train(args):
     criterion = nn.CrossEntropyLoss()
 
     if args.rank == 0:
-        logger.info("Backbone: %s | embed_dim: %d", args.backbone, model_embed_dim)
+        logger.info("Backbone: %s | embed_dim: %d | expert_type: %s", args.backbone, model_embed_dim, args.expert_type)
         logger.info("Trainable parameters: %d", sum(p.numel() for p in trainable_params))
         logger.info("FAM perturbation sign: %s", "positive/add" if args.fam_perturb_add else "negative/sub")
         if args.distributed:
@@ -567,9 +628,15 @@ def parse_args():
     parser.add_argument("--num_init_classes", type=int, default=1000)
     parser.add_argument("--num_id_classes", type=int, default=900)
     parser.add_argument("--ood_active_classes", type=int, default=10)
+    parser.add_argument("--expert_type", type=str, default="prompt", choices=["prompt", "adapter", "lora"])
     parser.add_argument("--len_prompt", type=int, default=20)
     parser.add_argument("--pos_prompt", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--aug_hidden_dim", type=int, default=None)
+    parser.add_argument("--fly_lora_rank", type=int, default=5)
+    parser.add_argument("--fly_lora_alpha", type=float, default=1.0)
+    parser.add_argument("--fly_lora_layers", type=int, default=5)
+    parser.add_argument("--fly_adapter_down_dim", type=int, default=10)
+    parser.add_argument("--fly_adapter_layers", type=int, default=5)
     parser.add_argument("--image_size", type=int, default=224)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--ood_batch_size", type=int, default=None)
