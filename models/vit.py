@@ -1253,20 +1253,29 @@ def vit_base_patch16_224_21k_ibot(pretrained=False, **kwargs):
     model_kwargs = dict(patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs)
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     if pretrained:
+        checkpoint_path = './checkpoints/checkpoint.pth'
         try:
-            root = torch.load('./checkpoints/checkpoint.pth', map_location='cpu')
+            # This trusted upstream iBOT checkpoint contains NumPy training metadata,
+            # which PyTorch 2.6+ rejects under torch.load's weights_only=True default.
+            root = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
             s_ckpt = root['teacher'] if isinstance(root, dict) and 'teacher' in root else root
-            # strip 'backbone.' prefix if present
             ckpt = {}
             for k, v in (s_ckpt.items() if isinstance(s_ckpt, dict) else []):
-                new_key = k.replace('backbone.', '')
+                new_key = k.removeprefix('backbone.')
                 ckpt[new_key] = v
             state_dict = model.state_dict()
-            ckpt = {k: v for k, v in ckpt.items() if k in state_dict}
+            ckpt = {
+                k: v for k, v in ckpt.items()
+                if k in state_dict and v.shape == state_dict[k].shape
+            }
+            if len(ckpt) < 150:
+                raise RuntimeError(f'Only matched {len(ckpt)} iBOT backbone tensors')
             state_dict.update(ckpt)
             model.load_state_dict(state_dict)
         except Exception as e:
-            _logger.warning('Failed to load iBOT (21k) weights from local checkpoint: %s', e)
+            raise RuntimeError(
+                f'Failed to load required iBOT (21k) weights from {checkpoint_path}'
+            ) from e
     return model
 
 
