@@ -21,7 +21,7 @@ def base_parser():
     parser.add_argument("--data_dir", type=str, default="./data", help="Dataset root directory (see README for expected layouts per dataset).")
     parser.add_argument("--n_tasks", type=int, default=5, help="The number of tasks")
     parser.add_argument("--step_num", type=int, default=-1,
-                        help="Number of internal steps for task-free prompt methods; if <=0, defaults to n_tasks.")
+                        help="Number of internal steps for DualPrompt/MVP/FlyPrompt. Only values > 1 enable sample-based internal step scheduling; otherwise these methods follow task boundaries.")
 
     parser.add_argument("--n", type=int, default=50, help="The percentage of disjoint split. Disjoint=100, Blurry=0")
     parser.add_argument("--m", type=int, default=10, help="The percentage of blurry samples in blurry split. Uniform split=100, Disjoint=0")
@@ -47,8 +47,19 @@ def base_parser():
     # ============= ViT configurations =============
     parser.add_argument('--profile', action='store_true', default=False, help='enable profiling for ViT_Prompt')
 
+    # ============= EWC / LwF configurations ============
+    parser.add_argument("--ewc_lambda", type=float, default=1000.0, help="EWC regularization strength.")
+    parser.add_argument("--ewc_gamma", type=float, default=1.0, help="Decay for consolidated EWC Fisher before adding the current task Fisher.")
+    parser.add_argument("--ewc_fisher_on_gpu", action=argparse.BooleanOptionalAction, default=True, help="Store EWC Fisher and parameter snapshot on GPU.")
+    parser.add_argument("--ewc_empirical_labels", action=argparse.BooleanOptionalAction, default=True, help="Use ground-truth labels for empirical Fisher; otherwise use model predictions.")
+    parser.add_argument("--lwf_lambda", type=float, default=1.0, help="LwF distillation loss weight.")
+    parser.add_argument("--lwf_temperature", type=float, default=2.0, help="Temperature for LwF knowledge distillation.")
+    parser.add_argument("--lwf_teacher_on_gpu", action=argparse.BooleanOptionalAction, default=True, help="Keep the frozen LwF teacher model on GPU.")
+
     # ============= MISA configurations ============
     parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
+    parser.add_argument('--flyprompt_pt_path', type=str, default='./checkpoints/flyprompt_misa_prompt.pt',
+                        help='Path to MISA-style pretrained FlyPrompt prompt checkpoint.')
 
     # ============= MePo configurations ============
     parser.add_argument('--mepo_backbone_path', type=str, default=None,
@@ -77,6 +88,32 @@ def base_parser():
     parser.add_argument("--ema_ratio", type=float, nargs="+", default=[0.9, 0.99], help="The EMA ratio for the expert FCs")
     parser.add_argument("--ensemble_method", type=str, default="softmax_max_prob", choices=["mean", "max_prob", "min_entropy", "softmax_mean", "softmax_max_prob", "softmax_min_entropy"],
                         help="Ensemble method for combining expert outputs: mean (average), max (maximum), min_entropy (minimum entropy), and softmax variants of these.")
+    parser.add_argument("--router_type", type=str, default="rpfc", choices=["rpfc", "ws"],
+                        help="Routing head type: rpfc (random projection FC) or ws (whitened subspace).")
+    parser.add_argument("--ws_k", type=int, default=32,
+                        help="Subspace rank for whitened subspace router.")
+    parser.add_argument("--no_ema_ensemble", action="store_true", default=False,
+                        help="Disable EMA head bank for FlyPrompt (only): skip EMA updates during training and use only the online fc head at evaluation.")
+    parser.add_argument("--use_analytic_head", action="store_true", default=False,
+                        help="Enable FlyPrompt frozen-feature analytic class head and extra per-eval diagnostics.")
+    parser.add_argument("--use_analytic_gain", action="store_true", default=False,
+                        help="Use stage-dependent analytic DAN gain as the FlyPrompt evaluation output.")
+    parser.add_argument("--analytic_gain_max_lambda", type=float, default=0.5,
+                        help="Maximum strength for the stage-dependent analytic DAN gain.")
+    parser.add_argument("--analytic_gain_schedule", type=str, default="quadratic", choices=["quadratic", "linear", "constant"],
+                        help="Stage schedule for analytic DAN gain strength.")
+
+    # ========== FlyAdapter / FlyLoRA configurations ==========
+    parser.add_argument("--fly_lora_rank", type=int, default=5,
+                        help="LoRA rank for FlyLoRA expert modules.")
+    parser.add_argument("--fly_lora_alpha", type=float, default=1.0,
+                        help="Scaling factor alpha for FlyLoRA expert modules.")
+    parser.add_argument("--fly_lora_layers", type=int, default=5,
+                        help="Number of early ViT blocks using FlyLoRA K/V experts.")
+    parser.add_argument("--fly_adapter_down_dim", type=int, default=10,
+                        help="Adapter bottleneck dimension for FlyAdapter expert modules.")
+    parser.add_argument("--fly_adapter_layers", type=int, default=5,
+                        help="Number of early ViT blocks using FlyAdapter experts.")
 
     # ========== RPFC gating configurations ==========
     parser.add_argument("--use_rp_gate", action="store_true", default=False,

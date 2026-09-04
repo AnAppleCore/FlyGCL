@@ -8,11 +8,16 @@ from .slca import SLCA
 from .hide_norga_trainer import HiDeGCLTrainer, NoRGaGCLTrainer
 from .sdlora import SDLoRAGCL
 from .sprompt import SPrompt as SPromptTrainer
+from .ewc import EWC
+from .lwf import LwF
+from .seq_baselines import LinearProbe, SeqFinetune, SeqFinetuneSmallLR
 
 METHODS = {
     "codaprompt": CodaPrompt,
     "dualprompt": DualPrompt,
     "flyprompt": FlyPrompt,
+    "flyadapter": FlyPrompt,
+    "flylora": FlyPrompt,
     "l2p": L2P,
     "mvp": MVP,
     "ranpac": RanPAC,
@@ -23,4 +28,9 @@ METHODS = {
     "norga": NoRGaGCLTrainer,
     "sdlora": SDLoRAGCL,
     "sprompt": SPromptTrainer,
+    "ewc": EWC,
+    "lwf": LwF,
+    "seq_finetune": SeqFinetune,
+    "linear_probe": LinearProbe,
+    "seq_finetune_small_lr": SeqFinetuneSmallLR,
 }

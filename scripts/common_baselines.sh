@@ -101,5 +101,5 @@ run_experiment() {
         --rnd_NM \
         --use_amp \
         "${EXTRA_ARGS[@]}" \
-        | tee "${LOG_PATH}/logs/${DATASET}/${NOTE}/seed_${SEEDS}_log.txt" 2>&1
+        2>&1 | tee "${LOG_PATH}/logs/${DATASET}/${NOTE}/seed_${SEEDS}_log.txt"
 }

@@ -325,10 +325,9 @@ class LoRAExpert(BaseExpert):
     @torch.no_grad()
     def init_new_expert(self, expert_id: int):
         # Mean init from previous experts (matching PromptExpert policy)
-        if expert_id == 0:
+        if expert_id == 0 or expert_id >= self.num_experts:
             return
         assert expert_id >= 1
-        assert expert_id < self.num_experts
         for layer in range(self.num_lora_layers):
             prev_As = torch.stack([self.lora_k[layer][e].lora_A.data for e in range(expert_id)], dim=0)
             prev_Bs = torch.stack([self.lora_k[layer][e].lora_B.data for e in range(expert_id)], dim=0)
