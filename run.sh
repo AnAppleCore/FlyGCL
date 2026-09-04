@@ -106,14 +106,9 @@ start_group_custom() {
     local seed_list_str=$5
     local dataset=${6:-$DATASET}  # Use provided dataset or global DATASET variable
 
-    # Shift to expose any additional arguments as extra args to forward.
-    # Accept an optional "--" separator for consistency with start_group.
+    # Shift to expose any additional arguments as extra args to forward
     shift 6
-    local extra_args=()
-    if [ "${1:-}" = "--" ]; then
-        shift
-    fi
-    extra_args=("$@")
+    local extra_args=("$@")
 
     # Convert string representations to arrays
     IFS=' ' read -ra gpu_list <<< "$gpu_list_str"
@@ -232,294 +227,33 @@ echo "========================================="
 # Note: You can still tweak defaults in scripts/common_baselines.sh, or override via extra args.
 # -----------------------------------------------------------------------------
 
-# for BACKBONE_TO_RUN in vit_base_patch16_224 vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3; do
-# for DATASET_TO_RUN in  cifar100 imagenet-r cub200; do
-# for METHOD_TO_RUN in flyprompt l2p dualprompt codaprompt mvp ranpac; do
-# for N_TASKS_TO_RUN in 5; do
+for BACKBONE_TO_RUN in vit_base_patch16_224 vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3; do
+for DATASET_TO_RUN in  cifar100 imagenet-r cub200; do
+for METHOD_TO_RUN in flyprompt l2p dualprompt codaprompt mvp ranpac; do
+for N_TASKS_TO_RUN in 5; do
 
-# start_group "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_standard" $DATASET_TO_RUN 0 1 2 3 4 \
-# -- --backbone $BACKBONE_TO_RUN --n_tasks $N_TASKS_TO_RUN
+start_group "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_standard" $DATASET_TO_RUN 0 1 2 3 4 \
+-- --backbone $BACKBONE_TO_RUN --n_tasks $N_TASKS_TO_RUN
 
-# wait_for_group_completion "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard"
+wait_for_group_completion "${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_standard"
 
-# done
-# done
-# done
-# done
-
-# -----------------------------------------------------------------------------
-# FlyPrompt analytic DAN gain full rerun.
-# Uses stage-dependent z-scored analytic evidence as a multiplicative class gain.
-# Runs all five seeds in one parallel batch on GPUs 0/1/2/3/5.
-# Override with, for example: ANALYTIC_DAN_GPU_LIST="0 1 2 3 5" bash run.sh
-# -----------------------------------------------------------------------------
-# ANALYTIC_DAN_GPU_LIST=${ANALYTIC_DAN_GPU_LIST:-"0 1 2 3 5"}
-# ANALYTIC_DAN_SEEDS="1 2 3 4 5"
-# ANALYTIC_DAN_BATCH_ID=1
-#
-# for BACKBONE_TO_RUN in vit_base_patch16_224; do
-# for DATASET_TO_RUN in cifar100 imagenet-r cub200; do
-# for METHOD_TO_RUN in flyprompt; do
-# for N_TASKS_TO_RUN in 5; do
-#
-# GROUP_NAME="${METHOD_TO_RUN}_${BACKBONE_TO_RUN}_${DATASET_TO_RUN}_${N_TASKS_TO_RUN}_analytic_dan_gain_batch${ANALYTIC_DAN_BATCH_ID}"
-# start_group_custom "$GROUP_NAME" "./scripts/run_baselines_${METHOD_TO_RUN}.sh" "tasks${N_TASKS_TO_RUN}_analytic_dan_gain" \
-#     "$ANALYTIC_DAN_GPU_LIST" "$ANALYTIC_DAN_SEEDS" "$DATASET_TO_RUN" \
-#     -- --backbone "$BACKBONE_TO_RUN" --n_tasks "$N_TASKS_TO_RUN" \
-#        --use_analytic_head --use_analytic_gain \
-#        --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic
-#
-# wait_for_group_completion "$GROUP_NAME"
-# ((ANALYTIC_DAN_BATCH_ID++))
-#
-# done
-# done
-# done
-# done
-
-# -----------------------------------------------------------------------------
-# FlyPrompt MISA-pretrain + analytic DAN gain sweep (vit_base_patch16_224).
-# Already completed for vit_base_patch16_224; commented out to avoid reruns.
-# -----------------------------------------------------------------------------
-# MISA_GPU_LIST="0 1 2 3 3"
-# MISA_SEEDS="1 2 3 4 5"
-# MISA_CKPT_ROOT="./checkpoints/FlyPrompt_MISA_Pretrain_Prompt"
-# for MISA_DATASET in cifar100 imagenet-r cub200; do
-# for MISA_EPOCH in 022 025; do
-#     for MISA_DIR in add sub; do
-#         MISA_CKPT="${MISA_CKPT_ROOT}/flyprompt_misa_${MISA_DIR}_ddp_bs256_ep32_seed1/epoch_${MISA_EPOCH}/flyprompt_misa_prompt_${MISA_DIR}_ddp_bs256_ep32_seed1.pt"
-#         if [ ! -f "$MISA_CKPT" ]; then echo "missing checkpoint: $MISA_CKPT"; exit 1; fi
-#         start_group_custom "misa_dan_${MISA_DATASET}_ep${MISA_EPOCH}_${MISA_DIR}_" \
-#             "./scripts/run_baselines_flyprompt.sh" \
-#             "tasks5_analytic_dan_gain_misa_${MISA_DIR}_ep${MISA_EPOCH}" \
-#             "$MISA_GPU_LIST" "$MISA_SEEDS" "$MISA_DATASET" \
-#             -- --backbone vit_base_patch16_224 --n_tasks 5 \
-#                --use_analytic_head --use_analytic_gain \
-#                --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic \
-#                --load_pt --flyprompt_pt_path "$MISA_CKPT"
-#         wait_for_group_completion "misa_dan_${MISA_DATASET}_ep${MISA_EPOCH}_${MISA_DIR}_"
-#     done
-# done
-# done
-
-# -----------------------------------------------------------------------------
-# Multi-backbone sweep: flyprompt / flyadapter / flylora x 6 configs x 3 datasets
-# Runs on 5 new backbones (vit_base_patch16_224 already complete).
-# Uses backbone- and method-specific MISA checkpoints from checkpoints/MISA_BBSub.
-# Each checkpoint was pretrained for its corresponding backbone and PEFT method.
-#
-# Config matrix:
-#   1 standard
-#   2 analytic DAN gain
-#   3 misa + standard   (sub ep022)
-#   4 misa + standard   (sub ep025)
-#   5 misa + DAN gain   (sub ep022)
-#   6 misa + DAN gain   (sub ep025)
-#
-# Override knobs via env, e.g.:
-#   MB_BACKBONES="vit_base_patch16_224_dino" bash run.sh
-#   MB_DRY_RUN=1 bash run.sh
-# -----------------------------------------------------------------------------
-MB_GPU_LIST=${MB_GPU_LIST:-"1 2 4 5 6"}
-MB_SEEDS=${MB_SEEDS:-"1 2 3 4 5"}
-MB_BACKBONES=${MB_BACKBONES:-"vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3"}
-MB_METHODS=${MB_METHODS:-"flyprompt flyadapter flylora"}
-MB_DATASETS=${MB_DATASETS:-"cifar100 imagenet-r cub200"}
-MB_MISA_EPOCHS=${MB_MISA_EPOCHS:-"022 025"}
-MB_INTER_GROUP_SLEEP=${MB_INTER_GROUP_SLEEP:-2}
-MB_DRY_RUN=${MB_DRY_RUN:-0}
-MB_RUN_STANDARD=${MB_RUN_STANDARD:-1}
-MB_RUN_DAN=${MB_RUN_DAN:-1}
-MB_RUN_MISA_STANDARD=${MB_RUN_MISA_STANDARD:-1}
-MB_RUN_MISA_DAN=${MB_RUN_MISA_DAN:-1}
-
-# ridge per backbone (matches the existing vit_base_patch16_224 flyprompt runs)
-mb_ridge_for() {
-    case "$1" in
-        vit_base_patch16_224)             echo 10000 ;;
-        vit_base_patch16_224_mepo_21k_1k) echo 1000000 ;;
-        vit_base_patch16_224_21k_ibot)    echo 10000000 ;;
-        vit_base_patch16_224_ibot)        echo 10000000 ;;
-        vit_base_patch16_224_dino)        echo 10000000 ;;
-        vit_base_patch16_224_mocov3)      echo 1000000 ;;
-        *) echo "10000" ;;
-    esac
-}
-
-MB_MISA_CKPT_ROOT=${MB_MISA_CKPT_ROOT:-"./checkpoints/MISA_BBSub"}
-MB_MISA_NOTE_SUFFIX=${MB_MISA_NOTE_SUFFIX:-"bbspec"}
-
-# Backbone-specific MISA checkpoint for a method+backbone+epoch.
-mb_misa_ckpt_for() {
-    local method=$1 backbone=$2 epoch=$3
-    local mt bt file
-    mt="$(mb_method_tag "$method")"
-    bt="$(mb_backbone_tag "$backbone")"
-    case "$method" in
-        flyprompt)  file="fp_sub_s1.pt" ;;
-        flyadapter) file="fa_sub_s1.pt" ;;
-        flylora)    file="fl_sub_s1.pt" ;;
-        *) file="" ;;
-    esac
-    echo "${MB_MISA_CKPT_ROOT}/${mt}_${bt}/epoch_${epoch}/${file}"
-}
-
-# structural args for the PEFT expert (none for flyprompt)
-mb_struct_args_for() {
-    case "$1" in
-        flyadapter) echo "--fly_adapter_down_dim 10 --fly_adapter_layers 5" ;;
-        flylora)    echo "--fly_lora_rank 5 --fly_lora_alpha 1.0 --fly_lora_layers 5" ;;
-        *) echo "" ;;
-    esac
-}
-
-# baseline script path for a method
-mb_script_for() {
-    case "$1" in
-        flyprompt)  echo "./scripts/run_baselines_flyprompt.sh" ;;
-        flyadapter) echo "./scripts/run_baselines_flyadapter.sh" ;;
-        flylora)    echo "./scripts/run_baselines_flylora.sh" ;;
-        *) echo "" ;;
-    esac
-}
-
-# Short tags are used only for screen session names. Result notes stay unchanged.
-mb_method_tag() {
-    case "$1" in
-        flyprompt)  echo "fp" ;;
-        flyadapter) echo "fa" ;;
-        flylora)    echo "fl" ;;
-        *) echo "$1" ;;
-    esac
-}
-
-mb_backbone_tag() {
-    case "$1" in
-        vit_base_patch16_224)             echo "base" ;;
-        vit_base_patch16_224_mepo_21k_1k) echo "mepo" ;;
-        vit_base_patch16_224_21k_ibot)    echo "i21" ;;
-        vit_base_patch16_224_ibot)        echo "ibot" ;;
-        vit_base_patch16_224_dino)        echo "dino" ;;
-        vit_base_patch16_224_mocov3)      echo "moco" ;;
-        *) echo "$1" ;;
-    esac
-}
-
-mb_dataset_tag() {
-    case "$1" in
-        cifar100)   echo "cf" ;;
-        imagenet-r) echo "imr" ;;
-        cub200)     echo "cub" ;;
-        *) echo "$1" ;;
-    esac
-}
-
-mb_group_name() {
-    local method=$1 backbone=$2 dataset=$3 config_tag=$4
-    echo "mb_$(mb_method_tag "$method")_$(mb_backbone_tag "$backbone")_$(mb_dataset_tag "$dataset")_${config_tag}_"
-}
-
-mb_result_complete() {
-    local method=$1 backbone=$2 dataset=$3 note=$4
-    local dir="./results/logs/${dataset}/${method}_${backbone}_${dataset}_${note}"
-    local seed
-    [ -d "$dir" ] || return 1
-    for seed in $MB_SEEDS; do
-        [ -s "$dir/seed_${seed}_log.txt" ] || return 1
-        [ -s "$dir/seed_${seed}.npy" ] || return 1
-        [ -s "$dir/seed_${seed}_eval.npy" ] || return 1
-        [ -s "$dir/seed_${seed}_eval_time.npy" ] || return 1
-    done
-    return 0
-}
-
-mb_run_group() {
-    local group=$1 script=$2 note=$3 dataset=$4
-    shift 4
-    local extra_args=("$@")
-
-    if [ "$MB_SKIP_COMPLETED" = "1" ] && mb_result_complete "$MB_METHOD" "$MB_BB" "$dataset" "$note"; then
-        echo "[SKIP] complete: ${MB_METHOD}_${MB_BB}_${dataset}_${note}"
-        return 0
-    fi
-
-    if [ "$MB_DRY_RUN" = "1" ]; then
-        echo "[DRY_RUN] start_group_custom $group | note=$note | $MB_GPU_LIST | $MB_SEEDS | ${extra_args[*]} | screen_len_with_seed=$(( ${#group} + 1 ))"
-    else
-        start_group_custom "$group" "$script" \
-            "$note" "$MB_GPU_LIST" "$MB_SEEDS" "$dataset" \
-            -- "${extra_args[@]}"
-        wait_for_group_completion "$group"
-        sleep "$MB_INTER_GROUP_SLEEP"
-    fi
-}
-
-MB_SKIP_COMPLETED=${MB_SKIP_COMPLETED:-1}
-
-echo "========================================="
-echo "Multi-backbone sweep started at $(date)"
-echo "Backbones: $MB_BACKBONES"
-echo "Methods:   $MB_METHODS"
-echo "Datasets:  $MB_DATASETS"
-echo "GPUs:      $MB_GPU_LIST"
-echo "Seeds:     $MB_SEEDS"
-echo "Sections:  standard=$MB_RUN_STANDARD dan=$MB_RUN_DAN misa_std=$MB_RUN_MISA_STANDARD misa_dan=$MB_RUN_MISA_DAN"
-echo "DRY_RUN:   $MB_DRY_RUN"
-echo "Skip completed: $MB_SKIP_COMPLETED"
-echo "========================================="
-
-for MB_BB in $MB_BACKBONES; do
-    MB_RIDGE="$(mb_ridge_for "$MB_BB")"
-    for MB_METHOD in $MB_METHODS; do
-        MB_SCRIPT="$(mb_script_for "$MB_METHOD")"
-        read -ra MB_STRUCT <<< "$(mb_struct_args_for "$MB_METHOD")"
-        for MB_DATASET in $MB_DATASETS; do
-
-            # --- 1) standard ---
-            if [ "$MB_RUN_STANDARD" = "1" ]; then
-                MB_GROUP="$(mb_group_name "$MB_METHOD" "$MB_BB" "$MB_DATASET" "t5std")"
-                mb_run_group "$MB_GROUP" "$MB_SCRIPT" "tasks5_standard" "$MB_DATASET" \
-                    --backbone "$MB_BB" --n_tasks 5 --rp_ridge "$MB_RIDGE" "${MB_STRUCT[@]}"
-            fi
-
-            # --- 2) analytic DAN gain ---
-            if [ "$MB_RUN_DAN" = "1" ]; then
-                MB_GROUP="$(mb_group_name "$MB_METHOD" "$MB_BB" "$MB_DATASET" "t5dan")"
-                mb_run_group "$MB_GROUP" "$MB_SCRIPT" "tasks5_analytic_dan_gain" "$MB_DATASET" \
-                    --backbone "$MB_BB" --n_tasks 5 --rp_ridge "$MB_RIDGE" "${MB_STRUCT[@]}" \
-                    --use_analytic_head --use_analytic_gain \
-                    --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic
-            fi
-
-            # --- 3/4) backbone-specific MISA + standard (sub ep022 / ep025) ---
-            if [ "$MB_RUN_MISA_STANDARD" = "1" ]; then
-                for MB_EPOCH in $MB_MISA_EPOCHS; do
-                    MB_CKPT="$(mb_misa_ckpt_for "$MB_METHOD" "$MB_BB" "$MB_EPOCH")"
-                    if [ ! -f "$MB_CKPT" ]; then echo "missing checkpoint: $MB_CKPT"; exit 1; fi
-                    MB_GROUP="$(mb_group_name "$MB_METHOD" "$MB_BB" "$MB_DATASET" "t5${MB_MISA_NOTE_SUFFIX}sub${MB_EPOCH#0}")"
-                    mb_run_group "$MB_GROUP" "$MB_SCRIPT" "tasks5_misa_${MB_MISA_NOTE_SUFFIX}_sub_ep${MB_EPOCH}" "$MB_DATASET" \
-                        --backbone "$MB_BB" --n_tasks 5 --rp_ridge "$MB_RIDGE" "${MB_STRUCT[@]}" \
-                        --load_pt --flyprompt_pt_path "$MB_CKPT"
-                done
-            fi
-
-            # --- 5/6) backbone-specific MISA + DAN gain (sub ep022 / ep025) ---
-            if [ "$MB_RUN_MISA_DAN" = "1" ]; then
-                for MB_EPOCH in $MB_MISA_EPOCHS; do
-                    MB_CKPT="$(mb_misa_ckpt_for "$MB_METHOD" "$MB_BB" "$MB_EPOCH")"
-                    if [ ! -f "$MB_CKPT" ]; then echo "missing checkpoint: $MB_CKPT"; exit 1; fi
-                    MB_GROUP="$(mb_group_name "$MB_METHOD" "$MB_BB" "$MB_DATASET" "t5dan${MB_MISA_NOTE_SUFFIX}sub${MB_EPOCH#0}")"
-                    mb_run_group "$MB_GROUP" "$MB_SCRIPT" "tasks5_analytic_dan_gain_misa_${MB_MISA_NOTE_SUFFIX}_sub_ep${MB_EPOCH}" "$MB_DATASET" \
-                        --backbone "$MB_BB" --n_tasks 5 --rp_ridge "$MB_RIDGE" "${MB_STRUCT[@]}" \
-                        --use_analytic_head --use_analytic_gain \
-                        --analytic_gain_max_lambda 0.5 --analytic_gain_schedule quadratic \
-                        --load_pt --flyprompt_pt_path "$MB_CKPT"
-                done
-            fi
-
-        done
-    done
 done
+done
+done
+done
+
+# -----------------------------------------------------------------------------
+
+# vit_base_patch16_224 vit_base_patch16_224_in1k vit_base_patch16_224_21k_ibot
+# vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3
+# vit_base_patch16_224_mepo_21k vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_mepo_ibot_21k
+
+# cifar100 imagenet-r cub200
+
+# l2p dualprompt codaprompt mvp ranpac
+
+# standard_start_and_wait "flyprompt" "vit_base_patch16_224 vit_base_patch16_224_mepo_21k_1k vit_base_patch16_224_21k_ibot vit_base_patch16_224_ibot vit_base_patch16_224_dino vit_base_patch16_224_mocov3" "cifar100 imagenet-r cub200"
+
 
 echo "========================================="
 echo "All GCL experiment groups completed!"
