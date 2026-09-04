@@ -18,7 +18,7 @@ def base_parser():
 
     # =========== Dataset configuration ============
     parser.add_argument("--dataset", type=str, default="cifar10", help="dataset name", choices=DATASETS.keys())
-    parser.add_argument("--data_dir", type=str, default="./data", help="Dataset root directory (see README for expected layouts per dataset).")
+    parser.add_argument("--data_dir", type=str, default="/data/datasets/", help="location of the dataset")
     parser.add_argument("--n_tasks", type=int, default=5, help="The number of tasks")
     parser.add_argument("--step_num", type=int, default=-1,
                         help="Number of internal steps for DualPrompt/MVP/FlyPrompt. Only values > 1 enable sample-based internal step scheduling; otherwise these methods follow task boundaries.")

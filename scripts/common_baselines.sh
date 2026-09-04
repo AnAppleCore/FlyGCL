@@ -7,9 +7,6 @@ N_TASKS=5
 LOG_PATH="./results"
 SEEDS=${2:-"1 2 3 4 5"}  # Default to multiple seeds, can be specified as second parameter
 
-# Python interpreter (override with env var PYTHON)
-PYTHON=${PYTHON:-python}
-
 # Common training settings
 TOPK=1
 N_WORKER=8
@@ -26,20 +23,16 @@ DATASET=${3:-"cifar100"}  # Default to cifar100, can be cifar100, imagenet-r, cu
 # Extra note for the experiment
 EXTRA_NOTE=${4:-"baseline_standard"}
 
-# Dataset root (override with env var DATA_ROOT).
-# Recommended layout is documented in README.md.
-DATA_ROOT=${DATA_ROOT:-"./data"}
-
-# Dataset-specific paths (can be overridden by passing --data_dir in extra args)
+# Dataset-specific paths
 case $DATASET in
     "cifar100")
-        DATA_DIR="${DATA_ROOT}/CIFAR"
+        DATA_DIR="/data/datasets"
         ;;
     "imagenet-r")
-        DATA_DIR="${DATA_ROOT}/imagenet-r"
+        DATA_DIR="/data/datasets/imagenet-r"
         ;;
     "cub200")
-        DATA_DIR="${DATA_ROOT}/CUB_200_2011"
+        DATA_DIR="/data/datasets/CUB_200_2011"
         ;;
     *)
         echo "Unsupported dataset: $DATASET"
@@ -79,7 +72,7 @@ run_experiment() {
     
     echo "Running $METHOD experiment..."
     
-    "${PYTHON}" -W ignore main.py \
+    /home/hongwei/miniconda3/envs/DGIL/bin/python -W ignore main.py \
         --seeds $SEEDS \
         --note $NOTE \
         --log_path $LOG_PATH \
