@@ -26,7 +26,7 @@ FlyGCL is a practical framework for **General Continual Learning (GCL) / online 
 
 ### Python environment
 
-- **Python**: 3.10+
+- **Python**: 3.10 (validated with pinned `timm==0.6.12`; Python 3.12 is incompatible with its dataclass definitions)
 - **PyTorch / CUDA**: please follow the official PyTorch instructions for your CUDA version, and then install the remaining dependencies.
 
 We recommend:
@@ -125,12 +125,18 @@ When you set `--backbone` to one of the following, `models/vit.py` will try to l
 
 ### Prompt checkpoints (MISA)
 
-`MISA` (based on `DualPrompt`) loads prompt tensors from local files when you pass `--load_pt`:
+Independent `--method misa` integration reuses the official MISA (ICLR 2025) downstream DualPrompt architecture, but automatically requires **ISA-pretrained prompts** (not `--load_pt`):
 
-- `./checkpoints/g_prompt.pt`
-- `./checkpoints/e_prompt.pt`
+- `./dongkyu_work/misa/checkpoints/g_prompt.pt`
+- `./dongkyu_work/misa/checkpoints/e_prompt.pt`
 
-Prompt checkpoints are distributed via the same links above.
+Obtain these from the [official MISA repository](https://github.com/kangzhiq/MISA/tree/main/pretrained_prompt). They are **committed in this fork under `dongkyu_work/misa/checkpoints/`** (original upstream Git blob SHA preserved); alternatively pass `--misa_prompt_dir /path/to/pretrained_prompt`. Without them, MISA fails immediately rather than silently initializing random prompts.
+
+```bash
+bash dongkyu_work/misa/scripts/run_misa.sh  # example only; official prompt tensors must exist first
+```
+
+The existing `--method dualprompt --load_pt` command remains supported and still loads the legacy `./checkpoints/*.pt` paths. For all MISA source code, launcher, documentation and verification limits, see [the MISA workspace](dongkyu_work/misa/README.md).
 
 ## 🚀 Quick start (FlyPrompt)
 
@@ -255,3 +261,7 @@ If you have any questions, suggestions, please feel free to report issues or con
 ## 📄 License
 
 MIT. See `LICENSE`.
+
+## Additional analytic baselines
+
+[AIR](dongkyu_work/air/README.md), [GACL](dongkyu_work/gacl/README.md), and [SLDA](dongkyu_work/slda/README.md) are available as `--method air`, `--method gacl`, and `--method slda` with separate implementation/source/launcher folders. See [shared settings and verification](dongkyu_work/analytic_common/README.md). AIR uses a practical default expansion of 1024; the official library's 8192 setting is selectable and needs substantially more memory. Upstream GACL sources and its adapted analytic head retain GPL-3.0 licensing.

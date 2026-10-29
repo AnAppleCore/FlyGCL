@@ -18,6 +18,7 @@ Hacked together by / Copyright 2020, Ross Wightman
 # -- Jaeho Lee, dlwogh9344@khu.ac.kr
 # ------------------------------------------
 """
+import inspect
 import logging
 import math
 from collections import OrderedDict
@@ -761,10 +762,24 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
 
     _logger.info(pretrained_cfg)
 
+    # timm 0.6.12 dispatches NPZ through an explicit argument; newer versions
+    # use custom_load in the pretrained config. Support both entry points.
+    cfg_get = pretrained_cfg.get if isinstance(pretrained_cfg, dict) else lambda key: getattr(pretrained_cfg, key, None)
+    source = cfg_get('file') or cfg_get('url') or ''
+    load_options = {}
+    if pretrained and str(source).split('?')[0].endswith('.npz'):
+        if isinstance(pretrained_cfg, dict):
+            pretrained_cfg['custom_load'] = True
+        else:
+            pretrained_cfg.custom_load = True
+        if 'pretrained_custom_load' in inspect.signature(build_model_with_cfg).parameters:
+            load_options['pretrained_custom_load'] = True
+
     model = build_model_with_cfg(
         VisionTransformer, variant, pretrained,
         pretrained_cfg=pretrained_cfg,
         pretrained_filter_fn=checkpoint_filter_fn,
+        **load_options,
         **kwargs)
     return model
 

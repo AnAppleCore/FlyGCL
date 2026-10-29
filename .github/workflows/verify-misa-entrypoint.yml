@@ -1,0 +1,37 @@
+name: Verify MISA main.py entrypoint and results (CPU)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-misa-entrypoint.yml'
+      - 'dongkyu_work/misa/scripts/verify_entrypoint.py'
+      - 'dongkyu_work/misa/scripts/verify_launcher.py'
+      - 'dongkyu_work/misa/scripts/verify_trainer.py'
+      - 'dongkyu_work/misa/implementation/**'
+      - 'dongkyu_work/misa/scripts/run_misa.sh'
+      - 'methods/_trainer.py'
+      - 'main.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  entrypoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install torch/torchvision CPU
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1
+      - name: Install project imports
+        run: python -m pip install timm==0.6.12 numpy==1.26.4 scipy==1.13.1 scikit-learn==1.6.0 pandas==2.2.3 matplotlib==3.9.4 opencv-python-headless==4.10.0.84 wandb==0.20.1
+      - name: Verify production bash launcher syntax
+        run: bash -n dongkyu_work/misa/scripts/run_misa.sh
+      - name: Verify launcher path resolution and checkpoint preflight without training
+        run: python dongkyu_work/misa/scripts/verify_launcher.py
+      - name: Run real main.py/Trainer task and metric writing path
+        run: python dongkyu_work/misa/scripts/verify_entrypoint.py

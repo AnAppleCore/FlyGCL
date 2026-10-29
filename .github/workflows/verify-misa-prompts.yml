@@ -1,0 +1,29 @@
+name: Verify MISA ISA prompt tensors (CPU)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-misa-prompts.yml'
+      - 'dongkyu_work/misa/checkpoints/**'
+      - 'dongkyu_work/misa/scripts/verify_prompts.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-misa:
+    name: SHA and CPU torch.load verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyTorch CPU
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+      - name: Verify original SHA, tensor shapes, dtype and finite values
+        run: python dongkyu_work/misa/scripts/verify_prompts.py

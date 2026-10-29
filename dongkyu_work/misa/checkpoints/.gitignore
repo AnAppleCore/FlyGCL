@@ -1,0 +1,3 @@
+# Extra local experiment checkpoints only; official g/e .pt files are tracked.
+*.pth
+*.ckpt

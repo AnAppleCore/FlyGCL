@@ -1,5 +1,10 @@
+from .air import AIRTrainer
+from .gacl import GACLTrainer
+from .slda import SLDATrainer
 from .codaprompt import CodaPrompt
 from .dualprompt import DualPrompt
+from .misa import MISA as MISATrainer
+from .singleprompt import SinglePromptTrainer
 from .flyprompt import FlyPrompt
 from .l2p import L2P
 from .mvp import MVP
@@ -13,8 +18,14 @@ from .lwf import LwF
 from .seq_baselines import LinearProbe, SeqFinetune, SeqFinetuneSmallLR
 
 METHODS = {
+    "air": AIRTrainer,
+    "gacl": GACLTrainer,
+    "slda": SLDATrainer,
+
     "codaprompt": CodaPrompt,
     "dualprompt": DualPrompt,
+    "misa": MISATrainer,
+    "singleprompt": SinglePromptTrainer,
     "flyprompt": FlyPrompt,
     "flyadapter": FlyPrompt,
     "flylora": FlyPrompt,

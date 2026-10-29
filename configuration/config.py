@@ -56,8 +56,16 @@ def base_parser():
     parser.add_argument("--lwf_temperature", type=float, default=2.0, help="Temperature for LwF knowledge distillation.")
     parser.add_argument("--lwf_teacher_on_gpu", action=argparse.BooleanOptionalAction, default=True, help="Keep the frozen LwF teacher model on GPU.")
 
+    # ============= SinglePrompt (CVPR Findings 2026) ============
+    parser.add_argument("--singleprompt_logit_type", choices=["cos_sim", "linear"],
+                        default="cos_sim", help="Official SinglePrompt classifier: cosine (default) or linear.")
+    parser.add_argument("--singleprompt_eval_mode", choices=["seen", "raw"],
+                        default="seen", help="FlyGCL seen-class evaluation (default) or official raw-logit evaluation.")
+
     # ============= MISA configurations ============
-    parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (MISA)')
+    parser.add_argument('--load_pt', action='store_true', default=False, help='load pretrained prompts (legacy DualPrompt option)')
+    parser.add_argument('--misa_prompt_dir', type=str, default='./dongkyu_work/misa/checkpoints',
+                        help='Directory containing official MISA ISA g_prompt.pt and e_prompt.pt tensors.')
     parser.add_argument('--flyprompt_pt_path', type=str, default='./checkpoints/flyprompt_misa_prompt.pt',
                         help='Path to MISA-style pretrained FlyPrompt prompt checkpoint.')
 
@@ -126,6 +134,18 @@ def base_parser():
     # ======== Expert similarity analysis ==========
     parser.add_argument("--analysis_expert_similarity", action="store_true", default=False,
                         help="If set, run expert feature similarity / CKA (including residual vs common) analysis after training.")
+
+    # Frozen-feature analytic baselines
+    parser.add_argument('--analytic_stats_device', choices=['auto', 'model', 'cpu'], default='auto',
+                        help='Auto: AIR statistics on CPU, GACL/SLDA on model device')
+    parser.add_argument('--gacl_expansion_size', type=int, default=5000)
+    parser.add_argument('--gacl_gamma', type=float, default=100.0)
+    parser.add_argument('--air_expansion_size', type=int, default=8192,
+                        help='Official AIR default; needs 50 GiB class statistics for 100 classes')
+    parser.add_argument('--air_gamma', type=float, default=0.1)
+    parser.add_argument('--air_max_stats_gib', type=float, default=64.0,
+                        help='Safety limit for stored class covariance tensors, excluding working memory')
+    parser.add_argument('--slda_shrinkage', type=float, default=1e-4)
 
     args = parser.parse_args()
     return args

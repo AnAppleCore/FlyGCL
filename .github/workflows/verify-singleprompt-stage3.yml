@@ -1,0 +1,39 @@
+name: Verify SinglePrompt Stage 3 integration
+on:
+  push:
+    branches: [feature/singleprompt-stage3]
+    paths:
+      - '.github/workflows/verify-singleprompt-stage3.yml'
+      - 'dongkyu_work/singleprompt/implementation/**'
+      - 'dongkyu_work/singleprompt/scripts/verify_model.py'
+      - 'dongkyu_work/singleprompt/scripts/verify_integration.py'
+      - 'models/singleprompt.py'
+      - 'methods/singleprompt.py'
+      - 'models/__init__.py'
+      - 'methods/__init__.py'
+      - 'configuration/config.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install CPU Torch matching FlyGCL
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1
+      - name: Install required libraries without changing project environment
+        run: python -m pip install timm==0.6.12 numpy==1.26.4 scipy==1.13.1 scikit-learn==1.6.0 pandas==2.2.3 matplotlib==3.9.4 opencv-python-headless==4.10.0.84 wandb==0.20.1
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile dongkyu_work/singleprompt/implementation/model.py dongkyu_work/singleprompt/implementation/trainer.py dongkyu_work/singleprompt/scripts/verify_integration.py
+      - name: Re-test official model parity
+        run: PYTHONPATH=. python -m dongkyu_work.singleprompt.scripts.verify_model
+      - name: Test FlyGCL shared Trainer, CLI and real Si-Blurry sampler
+        run: PYTHONPATH=. python -m dongkyu_work.singleprompt.scripts.verify_integration

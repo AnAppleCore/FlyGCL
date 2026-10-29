@@ -1,0 +1,31 @@
+name: Verify MISA full ViT CPU Forward
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-misa-forward.yml'
+      - 'dongkyu_work/misa/scripts/verify_model_forward.py'
+      - 'dongkyu_work/misa/implementation/**'
+      - 'models/vit.py'
+      - 'models/dualprompt.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forward:
+    name: CPU full ViT-B/16 construct and Forward/Backward smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install torch and torchvision CPU
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1
+      - name: Install FlyGCL source import dependencies
+        run: python -m pip install timm==0.6.12 numpy==1.26.4 scipy==1.13.1 scikit-learn==1.6.0 pandas==2.2.3 matplotlib==3.9.4 opencv-python-headless==4.10.0.84 wandb==0.20.1
+      - name: Run real ViT-B/16 CPU Forward/Backward without external backbone download
+        run: python dongkyu_work/misa/scripts/verify_model_forward.py

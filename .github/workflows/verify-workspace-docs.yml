@@ -1,0 +1,25 @@
+name: Verify research workspace docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-workspace-docs.yml'
+      - 'dongkyu_work/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Check newcomer navigation, README sizes and all workspace links
+        run: python dongkyu_work/misa/scripts/verify_docs.py
+      - name: Check MISA launcher syntax
+        run: bash -n dongkyu_work/misa/scripts/run_misa.sh

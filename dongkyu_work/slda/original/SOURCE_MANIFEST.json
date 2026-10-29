@@ -1,0 +1,26 @@
+{
+  "scope": "Selected unmodified upstream files; executable FlyGCL adapters live in ../implementation",
+  "files": [
+    {
+      "path": "original/slda/LICENSE",
+      "repository": "tyler-hayes/Deep_SLDA",
+      "commit": "bc1579799b5925d2e4299c2f45b426d2d4219da5",
+      "upstream_path": "LICENSE",
+      "git_blob_sha": "01c9b3c3585f4d6451310c64c978a23829613399"
+    },
+    {
+      "path": "original/slda/README.md",
+      "repository": "tyler-hayes/Deep_SLDA",
+      "commit": "bc1579799b5925d2e4299c2f45b426d2d4219da5",
+      "upstream_path": "README.md",
+      "git_blob_sha": "19ecc21d5b4ea00faad068fc1c3c19f9afc44c82"
+    },
+    {
+      "path": "original/slda/SLDA_Model.py",
+      "repository": "tyler-hayes/Deep_SLDA",
+      "commit": "bc1579799b5925d2e4299c2f45b426d2d4219da5",
+      "upstream_path": "SLDA_Model.py",
+      "git_blob_sha": "8c18c549aae786467af9be6370bb14a93d866a0e"
+    }
+  ]
+}

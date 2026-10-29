@@ -1,0 +1,30 @@
+name: Verify MISA final source audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-misa-final.yml'
+      - 'dongkyu_work/misa/**'
+      - 'models/**'
+      - 'methods/**'
+      - 'utils/**'
+      - 'main.py'
+      - 'configuration/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Check upstream and baseline files, prompts, wiring, docs
+        run: python dongkyu_work/misa/scripts/verify_final_audit.py

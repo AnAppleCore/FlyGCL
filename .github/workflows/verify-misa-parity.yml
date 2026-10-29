@@ -1,0 +1,33 @@
+name: Verify MISA parity and protocol (CPU)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-misa-parity.yml'
+      - 'dongkyu_work/misa/implementation/**'
+      - 'dongkyu_work/misa/scripts/verify_parity.py'
+      - 'dongkyu_work/misa/original/MISA/models/dualprompt.py'
+      - 'dongkyu_work/misa/original/MISA/methods/dualprompt.py'
+      - 'models/dualprompt.py'
+      - 'methods/dualprompt.py'
+      - 'methods/flyprompt.py'
+      - 'methods/_trainer.py'
+      - 'models/l2p.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install lightweight CPU test dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+          python -m pip install numpy==1.26.4
+      - name: Official algorithm and shared protocol checks (no GPU training)
+        run: python dongkyu_work/misa/scripts/verify_parity.py

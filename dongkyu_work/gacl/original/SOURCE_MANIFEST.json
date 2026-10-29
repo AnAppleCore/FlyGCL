@@ -1,0 +1,47 @@
+{
+  "scope": "Selected unmodified upstream files; executable FlyGCL adapters live in ../implementation",
+  "files": [
+    {
+      "path": "original/gacl/LICENSE",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "LICENSE",
+      "git_blob_sha": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7"
+    },
+    {
+      "path": "original/gacl/README.md",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "README.md",
+      "git_blob_sha": "e84c6e317cad79fa737d35197942cbdef272fab6"
+    },
+    {
+      "path": "original/gacl/methods/GACL.py",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "methods/GACL.py",
+      "git_blob_sha": "56ee23f6d7e2537f021e1f8e7077ca85c0861e73"
+    },
+    {
+      "path": "original/gacl/methods/SLDA.py",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "methods/SLDA.py",
+      "git_blob_sha": "35d1f17d684c2643a280af2d38968276b682a894"
+    },
+    {
+      "path": "original/gacl/models/pretrained.py",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "models/pretrained.py",
+      "git_blob_sha": "7e0f390dfd878d0d4de2ae4542ec3512396b4e47"
+    },
+    {
+      "path": "original/gacl/scripts/gacl.sh",
+      "repository": "CHEN-YIZHU/GACL",
+      "commit": "fc21369792dd95a131692ae13190c763e0ed819c",
+      "upstream_path": "scripts/gacl.sh",
+      "git_blob_sha": "4830e3d5dc6ae7b71160c657a3b8e26cfda657a5"
+    }
+  ]
+}

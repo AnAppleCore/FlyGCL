@@ -1,0 +1,54 @@
+{
+  "scope": "Selected unmodified upstream files; executable FlyGCL adapters live in ../implementation",
+  "files": [
+    {
+      "path": "original/air/LICENSE",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "LICENSE",
+      "git_blob_sha": "8fb702005b4d38593292cea9ce7de714570a0e12"
+    },
+    {
+      "path": "original/air/README.md",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "README.md",
+      "git_blob_sha": "b082b79fbbfdd7f006e7c9914b4d6321ef61e651"
+    },
+    {
+      "path": "original/air/analytic/AIR.py",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "analytic/AIR.py",
+      "git_blob_sha": "541c7b071906bfe4f617cf0e4c804a25ada0ebcd"
+    },
+    {
+      "path": "original/air/analytic/ACIL.py",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "analytic/ACIL.py",
+      "git_blob_sha": "c35270257062b189f7c0a71f03953f189c5e80dc"
+    },
+    {
+      "path": "original/air/analytic/Buffer.py",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "analytic/Buffer.py",
+      "git_blob_sha": "b56b9850112f661587ec7cf12c40e19dce263e2a"
+    },
+    {
+      "path": "original/air/analytic/AnalyticLinear.py",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "analytic/AnalyticLinear.py",
+      "git_blob_sha": "9e528fa13784bad9fdbbcba7fba86262d1e1a380"
+    },
+    {
+      "path": "original/air/config.py",
+      "repository": "ZHUANGHP/Analytic-continual-learning",
+      "commit": "0afd6bf87622e808ce7f730f8556e78229b9e758",
+      "upstream_path": "config.py",
+      "git_blob_sha": "fc477bd8d1405f9f62d136bed1b1d5e32f6de7bc"
+    }
+  ]
+}
